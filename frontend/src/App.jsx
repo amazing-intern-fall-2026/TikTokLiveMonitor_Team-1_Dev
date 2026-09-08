@@ -3,53 +3,100 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { api } from './services/api';
 
-const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-const MAX_FEED_ITEMS = 200; // Đảm bảo NFR-PERF-05 chống tràn RAM trình duyệt
+const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const MAX_FEED_ITEMS = 200; // Đảm bảo NFR-PERF-05 & FR-13: Tránh tràn RAM tab browser
 
 export default function App() {
   const [username, setUsername] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED'); // DISCONNECTED | CONNECTING | CONNECTED | ERROR
+  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Feed và Metrics
+  // Feed realtime & Thống kê phiên
   const [events, setEvents] = useState([]);
-  const [stats, setStats] = useState({ comments: 0, diamonds: 0, joins: 0 });
+  const [viewerCount, setViewerCount] = useState(0);
+  const [stats, setStats] = useState({
+    comments: 0,
+    diamonds: 0,
+    totalGifts: 0,
+    joins: 0,
+  });
 
   const socketRef = useRef(null);
 
-  // Thiết lập Socket.io lắng nghe sự kiện từ Backend
   useEffect(() => {
+    // Khởi tạo kết nối Socket.io tới backend
     const socket = io(SOCKET_SERVER_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       autoConnect: true,
     });
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('Socket.io kết nối thành công với Backend:', socket.id);
+      console.log('>>> [Socket.io] Kết nối backend thành công:', socket.id);
+      setErrorMessage('');
     });
 
     socket.on('disconnect', () => {
+      console.log('>>> [Socket.io] Mất kết nối tới backend');
       setConnectionStatus('DISCONNECTED');
     });
 
-    // Nhận trạng thái kết nối từ Backend
-    socket.on('status_change', (data) => {
-      setConnectionStatus(data.status);
-      if (data.error) setErrorMessage(data.error);
+    // 1. Kênh CHAT (Khớp với backend liveStream.service & socket.service)
+    socket.on('CHAT', (data) => {
+      const feedItem = {
+        id: `chat_${data.createTime || Date.now()}_${Math.random()}`,
+        type: 'CHAT',
+        user: data.nickname || data.username || 'Khán giả',
+        text: data.comment,
+        timestamp: data.createTime || Date.now(),
+      };
+
+      setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
+      setStats((prev) => ({ ...prev, comments: prev.comments + 1 }));
     });
 
-    // Nhận sự kiện chuẩn hóa từ Backend
-    socket.on('live_event', (newEvent) => {
-      // 1. Cập nhật dòng sự kiện (chặn tối đa 200 mục để giữ bộ nhớ an toàn)
-      setEvents((prev) => [newEvent, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
+    // 2. Kênh GIFT (Tuân thủ BR-GF-01 & AC-02: Khử trùng streak)
+    socket.on('GIFT', (data) => {
+      const isFinished = data.repeatEnd !== undefined ? Boolean(data.repeatEnd) : true;
+      const calculatedDiamonds = (Number(data.diamondCount) || 0) * (Number(data.repeatCount) || 1);
 
-      // 2. Tích lũy số liệu thống kê realtime
-      setStats((prev) => ({
-        comments: prev.comments + (newEvent.type === 'COMMENT' ? 1 : 0),
-        diamonds: prev.diamonds + (newEvent.type === 'GIFT' ? (newEvent.payload.totalDiamondValue || 0) : 0),
-        joins: prev.joins + (newEvent.type === 'JOIN' ? 1 : 0),
-      }));
+      const feedItem = {
+        id: `gift_${Date.now()}_${Math.random()}`,
+        type: 'GIFT',
+        user: data.nickname || data.username || 'Khán giả',
+        text: `tặng ${data.repeatCount}x ${data.giftName} (${calculatedDiamonds} 💎)`,
+        isFinished,
+        timestamp: data.createTime || Date.now(),
+      };
+
+      setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
+
+      // CHỈ CỘNG KIM CƯƠNG VÀO TỔNG KHI COMBO ĐÃ HOÀN TẤT (repeatEnd = true)
+      if (isFinished) {
+        setStats((prev) => ({
+          ...prev,
+          totalGifts: prev.totalGifts + (Number(data.repeatCount) || 1),
+          diamonds: prev.diamonds + calculatedDiamonds,
+        }));
+      }
+    });
+
+    // 3. Kênh MEMBER_JOIN (Khớp với test-events & WebcastEvent.ROOM_USER)
+    socket.on('MEMBER_JOIN', (data) => {
+      if (data.viewerCount !== undefined) {
+        setViewerCount(Number(data.viewerCount));
+      }
+
+      const feedItem = {
+        id: `join_${Date.now()}_${Math.random()}`,
+        type: 'MEMBER_JOIN',
+        user: data.nickname || data.username || 'Người xem mới',
+        text: 'vừa tham gia phòng live',
+        timestamp: data.createTime || Date.now(),
+      };
+
+      setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
+      setStats((prev) => ({ ...prev, joins: prev.joins + 1 }));
     });
 
     return () => {
@@ -57,7 +104,7 @@ export default function App() {
     };
   }, []);
 
-  // Xử lý nút Kết nối / Ngắt kết nối
+  // Xử lý Connect / Disconnect Live Stream (FR-01 -> FR-07)
   const handleToggleConnect = async () => {
     setErrorMessage('');
     if (connectionStatus === 'CONNECTED') {
@@ -68,33 +115,35 @@ export default function App() {
         setErrorMessage(err.message);
       }
     } else {
-      if (!username.trim()) {
-        setErrorMessage('Vui lòng nhập Username TikTok hợp lệ');
+      const cleanUsername = username.trim().replace(/^@/, '');
+      if (!cleanUsername) {
+        setErrorMessage('Vui lòng nhập chính xác TikTok username');
         return;
       }
       try {
         setConnectionStatus('CONNECTING');
-        await api.connectRoom(username.trim().replace(/^@/, ''));
+        await api.connectRoom(cleanUsername);
+        setConnectionStatus('CONNECTED');
       } catch (err) {
         setConnectionStatus('ERROR');
-        setErrorMessage(err.message);
+        setErrorMessage(err.message || 'Lỗi kết nối phòng LIVE');
       }
     }
   };
 
-  // Kích hoạt Dừng khẩn cấp
+  // Nút Dừng Khẩn Cấp (FR-33 / BR-EFF-04)
   const handleKillSwitch = async () => {
     try {
       await api.triggerKillSwitch();
-      alert('Đã phát lệnh CLEAR_ALL_EFFECTS tới toàn hệ thống!');
+      alert('ĐÃ PHÁT LỆNH CLEAR_ALL_EFFECTS SANG GAME ENGINE THÀNH CÔNG!');
     } catch (err) {
-      alert(`Lỗi Kill Switch: ${err.message}`);
+      alert(`Lỗi Kill-Switch: ${err.message}`);
     }
   };
 
   return (
     <div className="app-container">
-      {/* 1. THANH ĐIỀU KHIỂN CHÍNH (TOP BAR) */}
+      {/* 1. KHUNG ĐIỀU KHIỂN CHÍNH (TOP BAR) */}
       <header className="header-panel">
         <div className="connection-group">
           <input
@@ -124,61 +173,67 @@ export default function App() {
 
       {errorMessage && <div className="error-banner">{errorMessage}</div>}
 
-      {/* 2. CHỈ SỐ REALTIME */}
+      {/* 2. CHỈ SỐ REALTIME (METRICS DASHBOARD - FR-17) */}
       <section className="stats-panel">
         <div className="stat-card">
-          <span className="stat-label">Tổng Comment</span>
-          <span className="stat-value">{stats.comments}</span>
+          <span className="stat-label">Số người xem (Snapshot)</span>
+          <span className="stat-value">{viewerCount.toLocaleString()}</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Tổng Diamond</span>
-          <span className="stat-value">{stats.diamonds}</span>
+          <span className="stat-label">Tổng Bình luận</span>
+          <span className="stat-value">{stats.comments.toLocaleString()}</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Lượt Join</span>
-          <span className="stat-value">{stats.joins}</span>
+          <span className="stat-label">Tổng Kim cương (Đã chốt)</span>
+          <span className="stat-value" style={{ color: '#f59e0b' }}>
+            {stats.diamonds.toLocaleString()} 💎
+          </span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Lượt vào phòng</span>
+          <span className="stat-value">{stats.joins.toLocaleString()}</span>
         </div>
       </section>
 
-      {/* 3. BỘ MOCK DATA TOOL (DÀNH CHO TEST ĐỘC LẬP) */}
+      {/* 3. BỘ CÔNG CỤ MOCK (FR-31: PHỤC VỤ TEST ĐỘC LẬP VỚI GAME) */}
       <section className="mock-panel">
-        <span className="mock-title">MOCK TOOL:</span>
-        <button className="btn btn-mock" onClick={() => api.sendMockComment('GO')}>
-          + Mock Comment "GO"
+        <span className="mock-title">MOCK TOOL (API TEST):</span>
+        <button className="btn btn-mock" onClick={() => api.sendMockChat('GO')}>
+          + Mock Chat "GO"
         </button>
-        <button className="btn btn-mock" onClick={() => api.sendMockComment('HEAL')}>
-          + Mock Comment "HEAL"
+        <button className="btn btn-mock" onClick={() => api.sendMockChat('HEAL')}>
+          + Mock Chat "HEAL"
         </button>
-        <button className="btn btn-mock" onClick={() => api.sendMockGift('Hoa Hồng', 1, 1)}>
-          + Mock Quà Nhỏ (1💎)
+        <button className="btn btn-mock" onClick={() => api.sendMockGift('Hoa Hồng', 1, 1, true)}>
+          + Mock Quà 1💎 (Chốt)
         </button>
-        <button className="btn btn-mock" onClick={() => api.sendMockGift('Sư Tử', 1000, 1)}>
-          + Mock Quà Lớn (1000💎)
+        <button className="btn btn-mock" onClick={() => api.sendMockGift('Trống Đồng', 5, 100, false)}>
+          + Mock Quà Combo (Đang chạy...)
         </button>
-        <button className="btn btn-mock" onClick={() => api.sendMockJoin()}>
-          + Mock Khán Giả Vào
+        <button className="btn btn-mock" onClick={() => api.sendMockGift('Sư Tử', 1, 1000, true)}>
+          + Mock Quà 1000💎 (Chốt)
+        </button>
+        <button className="btn btn-mock" onClick={() => api.sendMockMemberJoin(viewerCount + 5)}>
+          + Mock Join (+5 views)
         </button>
       </section>
 
-      {/* 4. BẢNG FEED SỰ KIỆN THỜI GIAN THỰC */}
+      {/* 4. DÒNG SỰ KIỆN REALTIME (FR-13 & NFR-PERF-05) */}
       <main className="feed-container">
         <h3>Dòng Sự Kiện Thời Gian Thực ({events.length}/{MAX_FEED_ITEMS})</h3>
         <div className="feed-list">
           {events.length === 0 ? (
-            <div className="empty-state">Chưa có tương tác nào. Bấm nút Mock hoặc kết nối phòng live để xem feed.</div>
+            <div className="empty-state">Hệ thống đang chờ sự kiện. Bấm các nút Mock ở trên để kiểm thử!</div>
           ) : (
             events.map((evt) => (
-              <div key={evt.eventId || Math.random()} className={`feed-item feed-${evt.type.toLowerCase()}`}>
-                <span className="feed-time">
-                  {new Date(evt.receivedAt || Date.now()).toLocaleTimeString()}
-                </span>
+              <div key={evt.id} className={`feed-item feed-${evt.type.toLowerCase()}`}>
+                <span className="feed-time">{new Date(evt.timestamp).toLocaleTimeString()}</span>
                 <span className="feed-tag">{evt.type}</span>
-                <span className="feed-user">{evt.user?.nickname || evt.user?.uniqueId}:</span>
-                <span className="feed-content">
-                  {evt.type === 'COMMENT' && evt.payload.text}
-                  {evt.type === 'GIFT' && `đã tặng ${evt.payload.repeatCount}x ${evt.payload.giftName} (${evt.payload.totalDiamondValue} 💎)`}
-                  {evt.type === 'JOIN' && 'đã tham gia phòng'}
-                </span>
+                <span className="feed-user">{evt.user}:</span>
+                <span className="feed-content">{evt.text}</span>
+                {evt.type === 'GIFT' && !evt.isFinished && (
+                  <span className="streak-indicator">[Đang combo...]</span>
+                )}
               </div>
             ))
           )}
