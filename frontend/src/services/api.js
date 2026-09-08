@@ -1,5 +1,5 @@
 // frontend/src/services/api.js
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 async function request(endpoint, options = {}) {
   const res = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -8,61 +8,67 @@ async function request(endpoint, options = {}) {
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || `Lỗi yêu cầu: ${res.status}`);
+    throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
   }
   return res.json();
 }
 
 export const api = {
-  // 1. Quản lý kết nối phòng LIVE TikTok
+  // 1. Quản lý phòng Live (FR-01 -> FR-08)
   connectRoom: (username) =>
-    request('/api/room/connect', {
+    request('/api/livestream/connect', {
       method: 'POST',
       body: JSON.stringify({ username }),
     }),
 
   disconnectRoom: () =>
-    request('/api/room/disconnect', { method: 'POST' }),
+    request('/api/livestream/disconnect', {
+      method: 'POST',
+    }),
 
-  // 2. Dừng khẩn cấp toàn bộ effect (Kill Switch)
+  getHealth: () => request('/health'),
+
+  // 2. Kill-Switch: Dừng khẩn cấp toàn bộ effect Game (FR-33, BR-EFF-04)
   triggerKillSwitch: () =>
-    request('/api/effects/kill-switch', { method: 'POST' }),
+    request('/api/effects/kill-switch', {
+      method: 'POST',
+    }),
 
-  // 3. Công cụ giả lập sự kiện (Mocking Tool)
-  sendMockComment: (commentText = 'GO', uniqueId = 'tester_01') =>
-    request('/api/mock/event', {
+  // 3. Mock Test Suite khớp chính xác với testEvent.routes.js của Thiên Tài (FR-31)
+  sendMockChat: (comment = 'GO', username = 'tester_vn', nickname = 'Khán Giả Test') =>
+    request('/api/test-events/chat', {
       method: 'POST',
       body: JSON.stringify({
-        type: 'COMMENT',
-        user: { uniqueId, nickname: 'Người Test' },
-        payload: { text: commentText, containsKeywords: [commentText.toUpperCase()] },
+        userId: 'mock_usr_' + Date.now(),
+        username,
+        nickname,
+        comment,
+        createTime: Date.now(),
       }),
     }),
 
-  sendMockGift: (giftName = 'Hoa Hồng', diamond = 10, repeatCount = 1) =>
-    request('/api/mock/event', {
+  sendMockGift: (giftName = 'Hoa Hồng', repeatCount = 1, diamondCount = 1, repeatEnd = true) =>
+    request('/api/test-events/gift', {
       method: 'POST',
       body: JSON.stringify({
-        type: 'GIFT',
-        user: { uniqueId: 'vip_tester', nickname: 'Đại Gia Test' },
-        payload: {
-          giftName,
-          unitDiamondValue: diamond,
-          repeatCount,
-          totalDiamondValue: diamond * repeatCount,
-          isStreakFinished: true,
-          giftTier: diamond * repeatCount >= 1000 ? 'LARGE' : 'SMALL',
-        },
+        userId: 'mock_vip_' + Date.now(),
+        username: 'dai_gia_test',
+        nickname: 'Đại Gia',
+        giftId: 'gift_' + giftName.toLowerCase().replace(/\s+/g, '_'),
+        giftName,
+        repeatCount,
+        diamondCount,
+        repeatEnd, // Tuân thủ BR-GF-01: Chỉ chốt điểm khi chuỗi kết thúc
+        createTime: Date.now(),
       }),
     }),
 
-  sendMockJoin: (uniqueId = 'new_viewer') =>
-    request('/api/mock/event', {
+  sendMockMemberJoin: (viewerCount = 100) =>
+    request('/api/test-events/member-join', {
       method: 'POST',
       body: JSON.stringify({
-        type: 'JOIN',
-        user: { uniqueId, nickname: 'Khán Giả Mới' },
-        payload: { isFirstJoinInSession: true, joinCountInSession: 1 },
+        viewerCount,
+        createTime: Date.now(),
       }),
     }),
 };
