@@ -65,6 +65,11 @@ body {
   opacity: 0.85;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-connect {
   background: #2563eb;
   color: #fff;
@@ -108,6 +113,11 @@ body {
   color: #fbbf24;
 }
 
+.status-reconnecting {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
 .status-error {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
@@ -123,7 +133,9 @@ body {
 
 .stats-panel {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Đổi từ repeat(3, 1fr) sang auto-fit: có 5 thẻ giờ đây (thêm Tổng Quà),
+     auto-fit tự co giãn đều thay vì lệch dòng cuối. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 16px;
 }
 
