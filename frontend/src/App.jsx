@@ -31,14 +31,19 @@ export default function App() {
     });
     socketRef.current = socket;
 
+    // Gộp 1 handler 'connect' duy nhất: vừa xử lý kết nối lần đầu, vừa xử lý
+    // trường hợp Socket.io tự reconnect thành công sau khi rớt tạm thời.
     socket.on('connect', () => {
       console.log('>>> [Socket.io] Kết nối backend thành công:', socket.id);
       setErrorMessage('');
+      setConnectionStatus((prev) => (prev === 'RECONNECTING' ? 'CONNECTED' : prev));
     });
 
-    socket.on('disconnect', () => {
-      console.log('>>> [Socket.io] Mất kết nối tới backend');
-      setConnectionStatus('DISCONNECTED');
+    socket.on('disconnect', (reason) => {
+      console.log('>>> [Socket.io] Mất kết nối tới backend:', reason);
+      // Chỉ chuyển sang RECONNECTING nếu đang CONNECTED (rớt ngoài ý muốn).
+      // Nếu đang ở state khác (vd. người dùng vừa chủ động DISCONNECTED) thì giữ nguyên.
+      setConnectionStatus((prev) => (prev === 'CONNECTED' ? 'RECONNECTING' : prev));
     });
 
     // 1. Kênh CHAT (Khớp với backend liveStream.service & socket.service)
@@ -48,7 +53,10 @@ export default function App() {
         type: 'CHAT',
         user: data.nickname || data.username || 'Khán giả',
         text: data.comment,
-        timestamp: data.createTime || Date.now(),
+        // Đọc receivedAt trước (chuẩn ISO 8601 sắp tới của contract),
+        // fallback về createTime (epoch millis hiện tại) để không vỡ khi
+        // contract đổi tên field.
+        timestamp: data.receivedAt || data.createTime || Date.now(),
       };
 
       setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
@@ -66,7 +74,7 @@ export default function App() {
         user: data.nickname || data.username || 'Khán giả',
         text: `tặng ${data.repeatCount}x ${data.giftName} (${calculatedDiamonds} 💎)`,
         isFinished,
-        timestamp: data.createTime || Date.now(),
+        timestamp: data.receivedAt || data.createTime || Date.now(),
       };
 
       setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
@@ -92,7 +100,7 @@ export default function App() {
         type: 'MEMBER_JOIN',
         user: data.nickname || data.username || 'Người xem mới',
         text: 'vừa tham gia phòng live',
-        timestamp: data.createTime || Date.now(),
+        timestamp: data.receivedAt || data.createTime || Date.now(),
       };
 
       setEvents((prev) => [feedItem, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
@@ -141,6 +149,17 @@ export default function App() {
     }
   };
 
+  const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
+
+  const connectButtonLabel =
+    connectionStatus === 'CONNECTED'
+      ? 'Ngắt kết nối'
+      : connectionStatus === 'CONNECTING'
+        ? 'Đang kết nối...'
+        : connectionStatus === 'RECONNECTING'
+          ? 'Đang kết nối lại...'
+          : 'Kết nối Live';
+
   return (
     <div className="app-container">
       {/* 1. KHUNG ĐIỀU KHIỂN CHÍNH (TOP BAR) */}
@@ -152,14 +171,14 @@ export default function App() {
             placeholder="Nhập TikTok username (vd: streamer_abc)..."
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            disabled={connectionStatus === 'CONNECTED' || connectionStatus === 'CONNECTING'}
+            disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
           />
           <button
             className={`btn ${connectionStatus === 'CONNECTED' ? 'btn-disconnect' : 'btn-connect'}`}
             onClick={handleToggleConnect}
-            disabled={connectionStatus === 'CONNECTING'}
+            disabled={isBusyConnecting}
           >
-            {connectionStatus === 'CONNECTED' ? 'Ngắt kết nối' : connectionStatus === 'CONNECTING' ? 'Đang kết nối...' : 'Kết nối Live'}
+            {connectButtonLabel}
           </button>
           <span className={`status-badge status-${connectionStatus.toLowerCase()}`}>
             {connectionStatus}
@@ -182,6 +201,10 @@ export default function App() {
         <div className="stat-card">
           <span className="stat-label">Tổng Bình luận</span>
           <span className="stat-value">{stats.comments.toLocaleString()}</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Tổng Quà đã chốt</span>
+          <span className="stat-value">{stats.totalGifts.toLocaleString()}</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Tổng Kim cương (Đã chốt)</span>
