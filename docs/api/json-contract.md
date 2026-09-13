@@ -1,8 +1,16 @@
 # JSON Contract — TikTok LIVE Monitor → Game Team
 
-Tài liệu mô tả định dạng dữ liệu (payload) mà Backend gửi cho team Game
+Tài liệu mô tả định dạng dữ liệu (Envelope) mà Backend gửi cho team Game
 qua **Socket.io**, để team Game bắt sự kiện và trigger hiệu ứng lên
 nhân vật trong game.
+
+> **Cập nhật 13/09:** đồng bộ theo `wrapEnvelope()` (commit `6d5bae1`,
+> nhánh `Tai-dev`/`dev`) — đổi field `event` → `type`, gộp `user`/`payload`
+> thành object lồng nhau đúng SRS mục 4.1–4.5, đổi `createTime` (epoch) →
+> `receivedAt` (ISO 8601), bổ sung `roomId`. **Hiện tại `wrapEnvelope()`
+> mới áp dụng cho mock `/api/test-events/*`; `liveStream.service.js`
+> (kết nối live thật) chưa dùng lại helper này — Đạt cần áp dụng trước
+> khi field khớp trên cả 2 luồng.**
 
 ## Kết nối
 
@@ -11,175 +19,185 @@ nhân vật trong game.
 - Team Game lắng nghe (subscribe) các event theo tên bên dưới trên
   cùng một socket connection.
 
-## Quy ước chung
+## Quy ước chung (Envelope — SRS mục 4.1)
 
-- Mọi payload đều là JSON object.
-- Trường `eventId`: UUID v4, sinh tại backend cho **mỗi event** khi extract từ
-  connector — dùng để Game/FE chống trigger trùng (idempotency), đặc biệt
-  quan trọng khi client bị mất kết nối socket và replay lại buffer.
-- Trường `sessionId`: UUID v4, sinh tại backend **mỗi khi bắt đầu một phiên
-  kết nối** (`connectToLiveStream` được gọi) tới 1 `room`; giữ nguyên cho đến
-  khi phiên đó `DISCONNECTED`. Dùng để nhóm các event theo cùng một lần theo
-  dõi live, tránh lẫn dữ liệu nếu operator disconnect rồi connect lại cùng
-  room.
-- Trường `seq`: số nguyên tăng dần (bắt đầu từ 1), reset về 1 mỗi khi có
-  `sessionId` mới — dùng để Game/FE phát hiện event bị rớt hoặc tới sai thứ
-  tự.
-- Trường `room`: username TikTok (uniqueId) của phiên live đang theo dõi —
-  dùng để phân biệt khi có nhiều phòng live được theo dõi song song.
-- Trường `createTime`: timestamp (epoch millis).
-- Các trường có thể `null` nếu TikTok không trả về dữ liệu tương ứng.
+Mọi event broadcast qua Socket.io đều có chung khung Envelope:
 
-> **Trạng thái hiện tại (09/2026):** `eventId`, `sessionId`, `seq` được đặc
-> tả ở đây theo yêu cầu chuẩn hoá Envelope (SRS mục 4.1) nhưng **chưa được
-> sinh trong code** (`liveStream.service.js` hiện chưa có UUID/seq counter,
-> chưa có khái niệm "phiên"). Đây là việc cần bổ sung ở backend trước khi
-> Game team dựa vào các field này để chống trùng/chống lệch thứ tự.
+| Field | Type | Mô tả |
+|---|---|---|
+| `eventId` | string (UUID v4) | Sinh mỗi event (`crypto.randomUUID()`) — Game/FE dùng chống trigger trùng khi replay buffer |
+| `sessionId` | string | Sinh 1 lần khi backend khởi động, giữ nguyên trong suốt phiên theo dõi hiện tại (v1.0 chỉ theo dõi 1 phòng live tại 1 thời điểm — SRS AS-01) |
+| `roomId` | string | Phòng live đang theo dõi (tương ứng `room`/username TikTok) |
+| `type` | string enum | `COMMENT` \| `GIFT` \| `JOIN` |
+| `receivedAt` | string (ISO 8601) | Thời điểm backend nhận/xử lý event, dạng `new Date().toISOString()` |
+| `seq` | number | Số nguyên tăng dần bắt đầu từ 1, đếm theo tiến trình backend hiện tại — dùng phát hiện event rớt/lệch thứ tự |
+| `user` | object | `{ userId, uniqueId, nickname }` — thông tin người thực hiện hành động |
+| `payload` | object | Dữ liệu riêng theo từng `type`, xem chi tiết ở mỗi mục bên dưới |
+| `sourceTimestamp` | string (ISO 8601), optional | Chỉ có nếu phân biệt được thời điểm TikTok phát sinh vs thời điểm backend nhận |
+
+> **Trạng thái hiện tại (09/2026):** `wrapEnvelope()` đã implement và áp
+> dụng cho 3 endpoint mock test-events (`backend/src/utils/envelope.js`).
+> Luồng live thật qua `liveStream.service.js` **chưa** dùng lại helper
+> này — `extractChatData`/`extractGiftData`/`extractRoomUserData` vẫn trả
+> payload phẳng, không có `eventId`/`sessionId`/`seq`. Cần đồng bộ trước
+> demo.
 
 ---
 
-## 1. Event `CHAT` — Bình luận
+## 1. Event `CHAT` (`type: "COMMENT"`) — Bình luận
 
 Phát khi có người xem gửi bình luận trong phòng live.
 
 ```json
 {
-  "event": "CHAT",
   "eventId": "b3f1c2e4-...-uuid",
-  "sessionId": "7a9d0e21-...-uuid",
+  "sessionId": "session_1757754869000",
+  "roomId": "tiktok_username",
+  "type": "COMMENT",
+  "receivedAt": "2026-09-13T07:54:29.123Z",
   "seq": 42,
-  "room": "tiktok_username",
-  "userId": "1234567890123456789",
-  "username": "viewer_unique_id",
-  "nickname": "Viewer Nickname",
-  "comment": "nội dung bình luận",
-  "createTime": 1735689600000
+  "user": {
+    "userId": "1234567890123456789",
+    "uniqueId": "viewer_unique_id",
+    "nickname": "Viewer Nickname"
+  },
+  "payload": {
+    "text": "nội dung bình luận",
+    "textNormalized": "noi dung binh luan",
+    "length": 19,
+    "containsKeywords": []
+  }
 }
 ```
 
-| Field | Type | Mô tả |
+| Field (trong `payload`) | Type | Mô tả |
 |---|---|---|
-| eventId | string (UUID) | Định danh duy nhất của event — xem Quy ước chung |
-| sessionId | string (UUID) | Định danh phiên kết nối hiện tại — xem Quy ước chung |
-| seq | number | Số thứ tự event trong phiên — xem Quy ước chung |
-| userId | string | ID nội bộ TikTok của người bình luận |
-| username | string | uniqueId (@handle) của người bình luận |
-| nickname | string | Tên hiển thị |
-| comment | string | Nội dung bình luận |
+| `text` | string | Nội dung bình luận gốc |
+| `textNormalized` | string | Bản đã chuẩn hoá: bỏ dấu tiếng Việt, bỏ emoji, lowercase, gộp khoảng trắng — dùng để match từ khoá (BR-CM-01) |
+| `length` | number | Độ dài `text` |
+| `containsKeywords` | array | Danh sách từ khoá khớp được (hiện backend trả mảng rỗng — logic lọc từ khoá thực tế **chưa** implement, xem mục 5) |
 
-**Gợi ý cho Game:** dùng `comment` để match từ khóa (ví dụ lệnh điều
-khiển nhân vật), dùng `nickname` để hiển thị tên người gửi lên màn hình.
+**Gợi ý cho Game:** dùng `textNormalized`/`containsKeywords` để match lệnh điều khiển nhân vật, dùng `user.nickname` để hiển thị tên người gửi lên màn hình.
 
 ---
 
-## 2. Event `GIFT` — Quà tặng
+## 2. Event `GIFT` (`type: "GIFT"`) — Quà tặng
 
 Phát khi có người xem tặng quà (bao gồm combo quà đang được gộp).
 
 ```json
 {
-  "event": "GIFT",
   "eventId": "c4a2d3f5-...-uuid",
-  "sessionId": "7a9d0e21-...-uuid",
+  "sessionId": "session_1757754869000",
+  "roomId": "tiktok_username",
+  "type": "GIFT",
+  "receivedAt": "2026-09-13T07:54:30.456Z",
   "seq": 43,
-  "room": "tiktok_username",
-  "userId": "1234567890123456789",
-  "username": "viewer_unique_id",
-  "nickname": "Viewer Nickname",
-  "giftId": 5655,
-  "giftName": "Rose",
-  "repeatCount": 3,
-  "repeatEnd": false,
-  "diamondCount": 1,
-  "createTime": 1735689600000
+  "user": {
+    "userId": "1234567890123456789",
+    "uniqueId": "viewer_unique_id",
+    "nickname": "Viewer Nickname"
+  },
+  "payload": {
+    "giftId": 5655,
+    "giftName": "Rose",
+    "unitDiamondValue": 1,
+    "repeatCount": 10,
+    "totalDiamondValue": 10,
+    "isStreakable": true,
+    "isStreakFinished": true,
+    "giftTier": "SMALL"
+  }
 }
 ```
 
-| Field | Type | Mô tả |
+| Field (trong `payload`) | Type | Mô tả |
 |---|---|---|
-| eventId | string (UUID) | Định danh duy nhất của event — xem Quy ước chung |
-| sessionId | string (UUID) | Định danh phiên kết nối hiện tại — xem Quy ước chung |
-| seq | number | Số thứ tự event trong phiên — xem Quy ước chung |
-| giftId | number | ID quà tặng theo TikTok |
-| giftName | string | Tên quà (vd: "Rose") |
-| repeatCount | number | Số lượng đã tặng trong combo hiện tại (tăng dần khi user giữ combo) |
-| repeatEnd | boolean | `true` khi combo đã kết thúc — **Game chỉ nên trigger hiệu ứng khi `repeatEnd === true`** để tránh trigger lặp lại nhiều lần trong 1 combo |
-| diamondCount | number | Giá trị quy đổi kim cương của **1 đơn vị** quà (tổng giá trị = `diamondCount * repeatCount`) |
+| `giftId` | number | ID quà tặng theo TikTok |
+| `giftName` | string | Tên quà (vd: "Rose") |
+| `unitDiamondValue` | number | Giá trị kim cương của **1 đơn vị** quà |
+| `repeatCount` | number | Số lượng đã tặng trong combo |
+| `totalDiamondValue` | number | = `unitDiamondValue * repeatCount` — backend **đã tính sẵn**, Game không cần tự nhân |
+| `isStreakable` | boolean | Quà này có cơ chế combo hay không |
+| `isStreakFinished` | boolean | `true` khi combo đã kết thúc — **Game chỉ nên trigger hiệu ứng khi `isStreakFinished === true`** |
+| `giftTier` | string enum | `SMALL` (≤99 kim cương) \| `MEDIUM` (≤499) \| `LARGE` (≤1999) \| `EPIC` (>1999) — ngưỡng hiện đang **hardcode**, sẽ cho Admin cấu hình sau (BR-GF-04) |
 
-**Gợi ý cho Game:** map `giftId`/`giftName` sang loại hiệu ứng
-(buff/debuff) theo bảng cấu hình riêng của team Game; dùng
-`diamondCount * repeatCount` để tính độ mạnh của hiệu ứng.
+**Gợi ý cho Game:** map `giftId`/`giftTier` sang loại hiệu ứng (buff/debuff) theo bảng cấu hình riêng; dùng `totalDiamondValue` để tính độ mạnh hiệu ứng.
 
 ---
 
-## 3. Event `MEMBER_JOIN` — Người vào phòng / Cập nhật viewer
-
-Phát khi có cập nhật số lượng người xem (bao gồm khi có người mới vào phòng).
+## 3. Event `MEMBER_JOIN` (`type: "JOIN"`) — Người vào phòng
 
 ```json
 {
-  "event": "MEMBER_JOIN",
   "eventId": "d5b3e4a6-...-uuid",
-  "sessionId": "7a9d0e21-...-uuid",
+  "sessionId": "session_1757754869000",
+  "roomId": "tiktok_username",
+  "type": "JOIN",
+  "receivedAt": "2026-09-13T07:54:31.789Z",
   "seq": 44,
-  "room": "tiktok_username",
-  "viewerCount": 1024,
-  "createTime": 1735689600000
+  "user": {
+    "userId": "1234567890123456789",
+    "uniqueId": "viewer_unique_id",
+    "nickname": "Viewer Nickname"
+  },
+  "payload": {
+    "isFirstJoinInSession": true,
+    "joinCountInSession": 1
+  }
 }
 ```
 
-| Field | Type | Mô tả |
+| Field (trong `payload`) | Type | Mô tả |
 |---|---|---|
-| eventId | string (UUID) | Định danh duy nhất của event — xem Quy ước chung |
-| sessionId | string (UUID) | Định danh phiên kết nối hiện tại — xem Quy ước chung |
-| seq | number | Số thứ tự event trong phiên — xem Quy ước chung |
-| viewerCount | number | Tổng số người đang xem tại thời điểm phát event |
+| `isFirstJoinInSession` | boolean | User này có phải lần đầu vào phòng trong phiên hiện tại không |
+| `joinCountInSession` | number | Số lần user này đã join trong phiên |
 
-> **Giới hạn của kết nối ẩn danh (quan trọng):** ở chế độ không đăng nhập,
-> `tiktok-live-connector` bắt event `ROOM_USER` chỉ trả về **tổng số viewer
-> hiện tại**, **không** trả về danh sách/thông tin từng người vừa vào phòng
-> (không có username, nickname, userId của người mới join). Vì vậy:
-> - Event `MEMBER_JOIN` hiện tại là **cập nhật viewer count tổng**, không
->   phải "1 event = 1 người vào phòng".
-> - Game **không thể** dựa vào event này để biết chính xác *ai* vừa vào,
->   và **không thể** implement logic phân biệt "lần đầu vào phiên"
->   (tương đương `isFirstJoinInSession` phía FE) chỉ từ dữ liệu backend gửi.
-> - Nếu Game cần trigger hiệu ứng theo *từng người* vào phòng (thay vì theo
->   ngưỡng viewerCount), đây là **giới hạn nền tảng** cần được Dev Game xác
->   nhận chấp nhận, chứ không phải lỗi/thiếu sót có thể fix bằng code phía
->   backend với giải pháp kết nối ẩn danh hiện tại.
+> **Giới hạn của kết nối ẩn danh (quan trọng — vẫn còn hiệu lực):** ở
+> mock test-events, `isFirstJoinInSession`/`joinCountInSession` được set
+> **thủ công qua request body** (mặc định `true`/`1`) để mô tả đúng shape
+> dữ liệu mong muốn. Nhưng với **live thật**, `tiktok-live-connector` ở
+> chế độ ẩn danh (event `ROOM_USER`) chỉ trả về **tổng `viewerCount`**,
+> **không có** danh sách/thông tin từng người vừa vào phòng. Vì vậy:
+> - Ở luồng live thật, backend **chưa thể** tự tính `isFirstJoinInSession`
+>   hay `joinCountInSession` thật — đây vẫn là **giới hạn nền tảng**, cần
+>   Dev Game xác nhận chấp nhận (xem OQ liên quan đã gửi).
+> - Field `payload` ở mục này mô tả **shape mong muốn theo SRS**; giá trị
+>   thật cho live case cần thêm giải pháp khác (vd. nâng cấp lên kết nối
+>   có đăng nhập) mới lấy được.
 
 ---
 
 ## 4. Endpoint test (Mock) — dùng để Game team dev không cần chờ live thật
 
-| Method | Endpoint | Broadcast event |
+| Method | Endpoint | `type` broadcast |
 |---|---|---|
-| POST | `/api/test-events/chat` | `CHAT` |
+| POST | `/api/test-events/chat` | `COMMENT` |
 | POST | `/api/test-events/gift` | `GIFT` |
-| POST | `/api/test-events/member-join` | `MEMBER_JOIN` |
+| POST | `/api/test-events/member-join` | `JOIN` |
 
-Body của mỗi request test nên theo đúng format field ở trên (trừ
-`createTime`, do backend tự gán). Ví dụ gọi test gift:
+Backend tự sinh `eventId`, `sessionId`, `seq`, `receivedAt` — body request chỉ cần các field nghiệp vụ. Ví dụ gọi test gift:
 
-```
 POST /api/test-events/gift
 Content-Type: application/json
 
 {
-  "room": "demo_room",
-  "username": "test_user",
-  "nickname": "Test User",
-  "giftId": 5655,
-  "giftName": "Rose",
-  "repeatCount": 1,
-  "repeatEnd": true,
-  "diamondCount": 1
+"room": "demo_room",
+"userId": "test_user",
+"uniqueId": "test_user",
+"nickname": "Test User",
+"giftId": 5655,
+"giftName": "Rose",
+"repeatCount": 1,
+"isStreakFinished": true,
+"diamondCount": 1
 }
-```
 
-## 5. Việc còn mở (cần chốt thêm với team Game)
 
-- [ ] Bảng mapping `giftId` → loại hiệu ứng game cụ thể (buff nào, debuff nào, độ mạnh)
+## 5. Việc còn mở (cần chốt thêm)
+
+- [ ] Đồng bộ `wrapEnvelope()` vào `liveStream.service.js` (luồng live thật) — hiện chỉ mock đã dùng
+- [ ] Logic lọc từ khoá thực tế cho `containsKeywords` (hiện luôn trả mảng rỗng)
+- [ ] Bảng mapping `giftId`/`giftTier` → loại hiệu ứng game cụ thể (buff nào, debuff nào, độ mạnh) — chờ OQ-01/OQ-02
 - [ ] Ngưỡng `viewerCount` nào thì trigger hiệu ứng đặc biệt (nếu có)
-- [ ] Có cần lọc/chặn từ ngữ không phù hợp trong `comment` trước khi gửi cho Game không
+- [ ] Giải pháp cho `isFirstJoinInSession`/`joinCountInSession` ở luồng live thật (giới hạn kết nối ẩn danh)
