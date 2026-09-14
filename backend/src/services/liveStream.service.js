@@ -8,16 +8,25 @@ const liveStreamRepository = require('../repositories/liveStream.repository');
 const activeConnections = new Map();
 
 /**
+ * The single room the (one-room-at-a-time) dashboard is currently monitoring,
+ * so the disconnect endpoint -- which the frontend calls with no body -- knows
+ * which connection to tear down.
+ */
+let activeUniqueId = null;
+
+/**
  * Opens an anonymous (no login/cookie) connection to a TikTok LIVE room and
  * wires up raw-data extraction for chat messages, gifts, and room user
  * (viewer join / viewer count) events.
  *
  * @param {string} uniqueId TikTok username (without the leading '@')
- * @returns {TikTokLiveConnection}
+ * @returns {Promise<import('tiktok-live-connector').TikTokLiveConnection['state']>} resolves once actually connected
  */
 function connectToLiveStream(uniqueId) {
-  if (activeConnections.has(uniqueId)) {
-    return activeConnections.get(uniqueId);
+  const existing = activeConnections.get(uniqueId);
+  if (existing) {
+    activeUniqueId = uniqueId;
+    return Promise.resolve(existing.state);
   }
 
   const connection = new TikTokLiveConnection(uniqueId, {
@@ -26,19 +35,23 @@ function connectToLiveStream(uniqueId) {
   });
 
   registerEventHandlers(connection, uniqueId);
+  activeConnections.set(uniqueId, connection);
+  activeUniqueId = uniqueId;
 
-  connection
+  return connection
     .connect()
     .then((state) => {
       console.log(`[${uniqueId}] Connected to roomId ${state.roomId}`);
+      return state;
     })
     .catch((err) => {
       console.error(`[${uniqueId}] Failed to connect:`, err.message);
       activeConnections.delete(uniqueId);
+      if (activeUniqueId === uniqueId) {
+        activeUniqueId = null;
+      }
+      throw err;
     });
-
-  activeConnections.set(uniqueId, connection);
-  return connection;
 }
 
 function registerEventHandlers(connection, uniqueId) {
@@ -49,6 +62,9 @@ function registerEventHandlers(connection, uniqueId) {
   connection.on(ControlEvent.DISCONNECTED, () => {
     console.log(`[${uniqueId}] disconnected`);
     activeConnections.delete(uniqueId);
+    if (activeUniqueId === uniqueId) {
+      activeUniqueId = null;
+    }
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
@@ -115,7 +131,21 @@ function disconnectFromLiveStream(uniqueId) {
   }
   connection.disconnect();
   activeConnections.delete(uniqueId);
+  if (activeUniqueId === uniqueId) {
+    activeUniqueId = null;
+  }
   return true;
+}
+
+/**
+ * Disconnects whichever room the dashboard is currently monitoring.
+ * @returns {boolean} true if a connection was actually torn down
+ */
+function disconnectCurrentLiveStream() {
+  if (!activeUniqueId) {
+    return false;
+  }
+  return disconnectFromLiveStream(activeUniqueId);
 }
 
 function getAllLiveStreams() {
@@ -136,4 +166,5 @@ module.exports = {
   createLiveStream,
   connectToLiveStream,
   disconnectFromLiveStream,
+  disconnectCurrentLiveStream,
 };
