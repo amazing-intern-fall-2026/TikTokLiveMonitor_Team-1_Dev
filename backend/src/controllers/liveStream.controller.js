@@ -1,19 +1,19 @@
 const liveStreamService = require('../services/liveStream.service');
 
-function getAll(req, res) {
-  res.json(liveStreamService.getAllLiveStreams());
+async function getAll(req, res) {
+  res.json(await liveStreamService.getAllLiveStreams());
 }
 
-function getById(req, res) {
-  const liveStream = liveStreamService.getLiveStreamById(req.params.id);
+async function getById(req, res) {
+  const liveStream = await liveStreamService.getLiveStreamById(req.params.id);
   if (!liveStream) {
     return res.status(404).json({ message: 'Live stream not found' });
   }
   res.json(liveStream);
 }
 
-function create(req, res) {
-  const liveStream = liveStreamService.createLiveStream(req.body);
+async function create(req, res) {
+  const liveStream = await liveStreamService.createLiveStream(req.body);
   res.status(201).json(liveStream);
 }
 
@@ -31,8 +31,8 @@ async function connect(req, res) {
   }
 }
 
-function disconnect(req, res) {
-  const disconnected = liveStreamService.disconnectCurrentLiveStream();
+async function disconnect(req, res) {
+  const disconnected = await liveStreamService.disconnectCurrentLiveStream();
   res.json({ disconnected });
 }
 
