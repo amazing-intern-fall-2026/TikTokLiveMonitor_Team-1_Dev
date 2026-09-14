@@ -1,51 +1,73 @@
 const { broadcastEvent } = require('../sockets/socket.service');
+const { wrapEnvelope } = require('../utils/envelope');
+const { normalizeText } = require('../utils/text');
+const { getGiftTier } = require('../utils/giftTier');
+
+function buildUser(body) {
+  return {
+    userId: body.userId || 'test_user',
+    uniqueId: body.uniqueId || body.userId || 'test_user',
+    nickname: body.nickname || 'Test User',
+  };
+}
 
 function testChat(req, res) {
-  const data = {
-    userId: req.body.userId || 'test_user',
-    nickname: req.body.nickname || 'Test User',
-    comment: req.body.comment || 'hello',
-    timestamp: Math.floor(Date.now() / 1000)
-  };
+  const text = req.body.comment || 'hello';
 
-  broadcastEvent('CHAT', data);
-
-  res.json({
-    event: 'CHAT',
-    data
+  const envelope = wrapEnvelope({
+    type: 'COMMENT',
+    roomId: req.body.room || 'test_room',
+    user: buildUser(req.body),
+    payload: {
+      text,
+      textNormalized: normalizeText(text),
+      length: text.length,
+      containsKeywords: [],
+    },
   });
+
+  broadcastEvent('CHAT', envelope);
+  res.json(envelope);
 }
 
 function testGift(req, res) {
-  const data = {
-    userId: req.body.userId || 'test_user',
-    nickname: req.body.nickname || 'Test User',
-    giftId: req.body.giftId || 5655,
-    giftName: req.body.giftName || 'Rose',
-    repeatCount: req.body.repeatCount || 10,
-    diamondCount: req.body.diamondCount || 1
-  };
+  const unitDiamondValue = req.body.diamondCount ?? 1;
+  const repeatCount = req.body.repeatCount ?? 10;
+  const totalDiamondValue = unitDiamondValue * repeatCount;
 
-  broadcastEvent('GIFT', data);
-
-  res.json({
-    event: 'GIFT',
-    data
+  const envelope = wrapEnvelope({
+    type: 'GIFT',
+    roomId: req.body.room || 'test_room',
+    user: buildUser(req.body),
+    payload: {
+      giftId: req.body.giftId || 5655,
+      giftName: req.body.giftName || 'Rose',
+      unitDiamondValue,
+      repeatCount,
+      totalDiamondValue,
+      isStreakable: req.body.isStreakable ?? true,
+      isStreakFinished: req.body.isStreakFinished ?? true,
+      giftTier: getGiftTier(totalDiamondValue),
+    },
   });
+
+  broadcastEvent('GIFT', envelope);
+  res.json(envelope);
 }
 
 function testMemberJoin(req, res) {
-  const data = {
-    nickname: req.body.nickname || 'Test User',
-    timestamp: Math.floor(Date.now() / 1000)
-  };
-
-  broadcastEvent('MEMBER_JOIN', data);
-
-  res.json({
-    event: 'MEMBER_JOIN',
-    data
+  const envelope = wrapEnvelope({
+    type: 'JOIN',
+    roomId: req.body.room || 'test_room',
+    user: buildUser(req.body),
+    payload: {
+      isFirstJoinInSession: req.body.isFirstJoinInSession ?? true,
+      joinCountInSession: req.body.joinCountInSession ?? 1,
+    },
   });
+
+  broadcastEvent('MEMBER_JOIN', envelope);
+  res.json(envelope);
 }
 
 module.exports = {
