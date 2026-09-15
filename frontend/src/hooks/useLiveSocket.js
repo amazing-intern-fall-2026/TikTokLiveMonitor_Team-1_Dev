@@ -28,7 +28,9 @@ export function useLiveSocket() {
     const socketRef = useRef(null);
 
     useEffect(() => {
-        const socket = io(SOCKET_SERVER_URL, {
+        // Namespace /monitor (tách riêng khỏi /game, nơi backend phát
+        // EffectCommand cho Game Client) -- xem backend/src/sockets/socket.service.js
+        const socket = io(`${SOCKET_SERVER_URL}/monitor`, {
             transports: ['websocket', 'polling'],
             autoConnect: true,
         });
