@@ -1,5 +1,9 @@
 const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-live-connector');
+const { eulerApiKey } = require('../config/env');
 const liveStreamRepository = require('../repositories/liveStream.repository');
+const sessionRepository = require('../repositories/session.repository');
+const appUserRepository = require('../repositories/appUser.repository');
+const eventRepository = require('../repositories/event.repository');
 const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
@@ -51,22 +55,54 @@ function connectToLiveStream(uniqueId) {
 
   const connection = new TikTokLiveConnection(uniqueId, {
     // No sessionId / cookies provided -> anonymous connection.
-    enableExtendedGiftInfo: true,
+    // enableExtendedGiftInfo fetches the room's gift catalog via the
+    // EulerStream sign server, which now requires a paid Business plan;
+    // on the free tier this makes every connect() attempt fail with
+    // "This endpoint requires a Business plan." Our own gift payload
+    // (giftId/giftName/unitDiamondValue from the GIFT event itself) does
+    // not depend on this catalog, so leave it disabled.
+    enableExtendedGiftInfo: false,
+    // Without a key, WebSocket signing shares Euler Stream's free community
+    // rate-limit pool with every other anonymous user of this library and
+    // fails unpredictably under load. An API key (free signup at
+    // https://www.eulerstream.com) raises that limit; omit the option
+    // entirely when unset so we still fall back to the anonymous pool.
+    ...(eulerApiKey ? { signApiKey: eulerApiKey } : {}),
   });
 
-  connectionContexts.set(uniqueId, { roomId: uniqueId, joinCounts: new Map() });
+  connectionContexts.set(uniqueId, {
+    roomId: uniqueId,
+    joinCounts: new Map(),
+    liveStreamId: null,
+    sessionId: null,
+  });
   registerEventHandlers(connection, uniqueId);
   activeConnections.set(uniqueId, connection);
   activeUniqueId = uniqueId;
 
   return connection
     .connect()
-    .then((state) => {
+    .then(async (state) => {
       console.log(`[${uniqueId}] Connected to roomId ${state.roomId}`);
       const context = connectionContexts.get(uniqueId);
       if (context) {
         context.roomId = state.roomId;
       }
+
+      // Best-effort: persistence must never block or break the live relay,
+      // so a DB outage here only means events won't be saved, not that the
+      // connection fails.
+      try {
+        const liveStream = await liveStreamRepository.findOrCreateByHostUsername(uniqueId);
+        const session = await sessionRepository.create(liveStream.id);
+        if (context) {
+          context.liveStreamId = liveStream.id;
+          context.sessionId = session.id;
+        }
+      } catch (err) {
+        console.error(`[${uniqueId}] Failed to open a DB session (events will not be persisted):`, err.message);
+      }
+
       return state;
     })
     .catch((err) => {
@@ -87,6 +123,7 @@ function registerEventHandlers(connection, uniqueId) {
 
   connection.on(ControlEvent.DISCONNECTED, () => {
     console.log(`[${uniqueId}] disconnected`);
+    closeSession(uniqueId, 'disconnected');
     activeConnections.delete(uniqueId);
     connectionContexts.delete(uniqueId);
     if (activeUniqueId === uniqueId) {
@@ -114,6 +151,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('CHAT', envelope);
+    persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
   });
 
   // Gift sent by a viewer -> broadcast as a GIFT envelope.
@@ -138,6 +176,14 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('GIFT', envelope);
+    persistEvent(uniqueId, 'GIFT', envelope.user, {
+      giftId: envelope.payload.giftId,
+      giftName: envelope.payload.giftName,
+      repeatCount: envelope.payload.repeatCount,
+      diamondCount: envelope.payload.unitDiamondValue,
+      repeatEnd: envelope.payload.isStreakFinished,
+      occurredAt: toDate(envelope.sourceTimestamp),
+    });
   });
 
   // Member joined the room -> broadcast as a JOIN envelope on 'MEMBER_JOIN'.
@@ -161,6 +207,20 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('MEMBER_JOIN', envelope);
+    persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
+  });
+
+  // Periodic viewer-count tick -- NOT a per-viewer event, so it only updates
+  // live_streams.viewer_count and is never broadcast or turned into an event row.
+  connection.on(WebcastEvent.ROOM_USER, (data) => {
+    const viewerCount = extractViewerCount(data);
+    const context = connectionContexts.get(uniqueId);
+    if (viewerCount === undefined || !context?.liveStreamId) {
+      return;
+    }
+    liveStreamRepository.updateViewerCount(context.liveStreamId, viewerCount).catch((err) => {
+      console.error(`[${uniqueId}] Failed to update viewer count:`, err.message);
+    });
   });
 }
 
@@ -201,11 +261,85 @@ function extractSourceTimestamp(data) {
   return raw ? Number(raw) : undefined;
 }
 
-function disconnectFromLiveStream(uniqueId) {
+function toDate(epochMillis) {
+  return epochMillis ? new Date(epochMillis) : undefined;
+}
+
+/**
+ * tiktok-live-connector's documented shape exposes data.viewerCount directly,
+ * but the raw ROOM_USER protobuf only guarantees totalUser/total as strings --
+ * fall back across both, same rationale as extractUser().
+ */
+function extractViewerCount(data) {
+  const raw = data.viewerCount ?? data.totalUser ?? data.total;
+  return raw === undefined ? undefined : Number(raw);
+}
+
+/**
+ * Persists a CHAT/GIFT/JOIN event (upserting the viewer first) if this
+ * connection has an open DB session. Fire-and-forget by design: a DB error
+ * is logged, never allowed to affect the live Socket.IO relay.
+ */
+async function persistEvent(uniqueId, eventType, user, extra) {
+  const context = connectionContexts.get(uniqueId);
+  if (!context?.sessionId) {
+    return;
+  }
+
+  try {
+    const appUser = await appUserRepository.upsert({
+      tiktokUserId: user.userId,
+      username: user.uniqueId,
+      nickname: user.nickname,
+    });
+
+    const base = { sessionId: context.sessionId, appUserId: appUser.id, occurredAt: extra.occurredAt };
+    if (eventType === 'CHAT') {
+      await eventRepository.insertCommentEvent({ ...base, comment: extra.comment });
+    } else if (eventType === 'GIFT') {
+      await eventRepository.insertGiftEvent({
+        ...base,
+        giftId: extra.giftId,
+        giftName: extra.giftName,
+        repeatCount: extra.repeatCount,
+        diamondCount: extra.diamondCount,
+        repeatEnd: extra.repeatEnd,
+      });
+    } else if (eventType === 'JOIN') {
+      await eventRepository.insertJoinEvent(base);
+    }
+  } catch (err) {
+    console.error(`[${uniqueId}] Failed to persist ${eventType} event:`, err.message);
+  }
+}
+
+/**
+ * Marks the connection's DB session closed, at most once (subsequent calls
+ * are a no-op once sessionId is cleared) -- both the ControlEvent.DISCONNECTED
+ * handler and an explicit disconnectFromLiveStream() call this, and either
+ * one may run first depending on whether the library emits the control event
+ * synchronously from connection.disconnect().
+ */
+async function closeSession(uniqueId, status) {
+  const context = connectionContexts.get(uniqueId);
+  const sessionId = context?.sessionId;
+  if (!sessionId) {
+    return;
+  }
+  context.sessionId = null;
+  try {
+    await sessionRepository.markDisconnected(sessionId, { status });
+  } catch (err) {
+    console.error(`[${uniqueId}] Failed to mark session ${status}:`, err.message);
+  }
+}
+
+async function disconnectFromLiveStream(uniqueId) {
   const connection = activeConnections.get(uniqueId);
   if (!connection) {
     return false;
   }
+  await closeSession(uniqueId, 'disconnected');
   connection.disconnect();
   activeConnections.delete(uniqueId);
   connectionContexts.delete(uniqueId);
@@ -217,11 +351,11 @@ function disconnectFromLiveStream(uniqueId) {
 
 /**
  * Disconnects whichever room the dashboard is currently monitoring.
- * @returns {boolean} true if a connection was actually torn down
+ * @returns {Promise<boolean>} true if a connection was actually torn down
  */
 function disconnectCurrentLiveStream() {
   if (!activeUniqueId) {
-    return false;
+    return Promise.resolve(false);
   }
   return disconnectFromLiveStream(activeUniqueId);
 }
