@@ -97,12 +97,12 @@ CREATE TABLE IF NOT EXISTS rule_counters (
     UNIQUE (rule_id, session_id)
 );
 
--- One row per effect dispatched to the game engine/overlay. event_id is
--- nullable: an effect can be triggered manually (e.g. the kill switch)
--- instead of by a specific live event.
+-- One row per effect dispatched to the game engine/overlay. rule_id and
+-- event_id are both nullable: an effect can be triggered manually (e.g. the
+-- kill switch, FR-30) instead of by a specific rule/live event.
 CREATE TABLE IF NOT EXISTS effect_commands (
     id BIGSERIAL PRIMARY KEY,
-    rule_id INTEGER NOT NULL REFERENCES rules(id),
+    rule_id INTEGER REFERENCES rules(id),
     event_id BIGINT REFERENCES events(id),
     payload JSONB NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING | SENT | ACKED | FAILED

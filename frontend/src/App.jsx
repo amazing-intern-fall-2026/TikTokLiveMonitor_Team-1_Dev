@@ -87,8 +87,9 @@ export default function App() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    // Khởi tạo kết nối Socket.io tới backend
-    const socket = io(SOCKET_SERVER_URL, {
+    // Khởi tạo kết nối Socket.io tới backend -- namespace /monitor (tách
+    // riêng khỏi /game, nơi backend phát EffectCommand cho Game Client)
+    const socket = io(`${SOCKET_SERVER_URL}/monitor`, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
     });

@@ -1,9 +1,20 @@
 function registerSocketHandlers(io) {
-  io.on('connection', (socket) => {
-    console.log(`Client connected: ${socket.id}`);
+  const monitorNamespace = io.of('/monitor');
+  const gameNamespace = io.of('/game');
+
+  monitorNamespace.on('connection', (socket) => {
+    console.log(`[monitor] Client connected: ${socket.id}`);
 
     socket.on('disconnect', () => {
-      console.log(`Client disconnected: ${socket.id}`);
+      console.log(`[monitor] Client disconnected: ${socket.id}`);
+    });
+  });
+
+  gameNamespace.on('connection', (socket) => {
+    console.log(`[game] Client connected: ${socket.id}`);
+
+    socket.on('disconnect', () => {
+      console.log(`[game] Client disconnected: ${socket.id}`);
     });
   });
 }
