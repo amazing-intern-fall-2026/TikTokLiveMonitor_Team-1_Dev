@@ -1,106 +1,585 @@
-.dashboard {
-  font-family: system-ui, -apple-system, sans-serif;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  color: #333;
+/* frontend/src/App.css */
+:root {
+  --bg-base: #000000;
+  --bg-surface: #121212;
+  --bg-input: #1a1a1a;
+  --border-color: #2a2a2a;
+  --text-main: #ffffff;
+  --text-muted: #75767a;
+  --tiktok-cyan: #25f4ee;
+  --tiktok-pink: #fe2c55;
+  --color-comment: #38bdf8;
+  --color-gift: #f59e0b;
+  --color-join: #25f4ee;
+  --color-danger: #fe2c55;
+  --radius-sm: 6px;
+  --radius-md: 10px;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #eee;
+* {
+  box-sizing: border-box;
 }
 
-.connect-bar input {
-  padding: 10px 15px;
-  font-size: 16px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  margin-right: 10px;
-  width: 250px;
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-main);
 }
 
-.btn-connect,
-.btn-disconnect {
-  padding: 10px 20px;
-  font-size: 16px;
+/* ---------- Logo TikTok chính thức (component TikTokLogo.jsx) ---------- */
+.sidebar-brand svg,
+.brand-header svg {
+  color: var(--text-main);
+  /* layer thứ 3 của logo ăn theo currentColor */
+  flex-shrink: 0;
+}
+
+/* ---------- Buttons / Inputs dùng chung ---------- */
+.btn {
+  padding: 10px 18px;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
   border: none;
-  border-radius: 6px;
   cursor: pointer;
-  font-weight: bold;
+  transition: opacity 0.2s, transform 0.1s;
 }
 
-.btn-connect {
-  background: #00f2fe;
+.btn:hover {
+  opacity: 0.85;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.btn-primary {
+  background: var(--text-main);
   color: #000;
 }
 
-.btn-disconnect {
-  background: #ff4757;
-  color: #fff;
+.btn-outline {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
 }
 
-.main-content {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
+.btn-danger-outline {
+  background: transparent;
+  border: 1px solid var(--tiktok-pink);
+  color: var(--tiktok-pink);
+}
+
+.full-width {
+  width: 100%;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 6px;
+}
+
+.link-btn:hover {
+  color: var(--text-main);
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  outline: none;
+}
+
+input:focus {
+  border-color: var(--tiktok-cyan);
+}
+
+.alert {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.alert-error {
+  background: rgba(254, 44, 85, 0.12);
+  border: 1px solid var(--tiktok-pink);
+  color: #ff8fa3;
+}
+
+.page-alert {
+  margin-bottom: 16px;
+}
+
+/* ---------- Màn Login ---------- */
+.center-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: radial-gradient(circle at 50% 0%, #0a0a0a 0%, #000000 60%);
+}
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 32px;
+  width: 100%;
+  max-width: 380px;
+}
+
+.brand-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.brand-header h2 {
+  margin: 12px 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* ---------- Layout Dashboard ---------- */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #000000;
+  border-right: 1px solid var(--border-color);
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 4px 8px;
+}
+
+.brand-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.3px;
+}
+
+.brand-name-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sidebar-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 0 12px;
+  margin: 4px 0 10px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  padding: 14px 12px;
+  border-radius: var(--radius-md);
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.nav-item:hover:not(.nav-item-disabled) {
+  background: var(--bg-input);
+}
+
+.nav-item-active {
+  color: var(--tiktok-pink);
+  font-weight: 700;
+}
+
+.nav-item-active .nav-icon {
+  color: var(--tiktok-pink);
+}
+
+.nav-item-disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.nav-icon {
+  flex-shrink: 0;
+  color: var(--text-main);
+}
+
+.nav-item-disabled .nav-icon {
+  color: var(--text-muted);
+}
+
+.nav-soon {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sidebar-footer p {
+  margin: 2px 0;
+}
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
 }
 
-.panel {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #e9ecef;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
-.mock-buttons button {
-  display: block;
-  width: 100%;
-  margin-bottom: 10px;
-  padding: 12px;
-  background: #fff;
-  border: 1px dashed #6c5ce7;
-  color: #6c5ce7;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s;
+.page-header h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 700;
 }
 
-.mock-buttons button:hover {
-  background: #6c5ce7;
-  color: #fff;
+.page-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
-.event-list {
-  max-height: 500px;
-  overflow-y: auto;
+.room-control {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 320px;
 }
 
-.event-item {
-  padding: 12px;
-  background: #fff;
-  margin-bottom: 10px;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+.room-input-group {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 8px;
 }
 
-.event-badge {
+.room-input-group .prefix {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.room-input-group input {
+  flex: 1;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  background: #dfe6e9;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-weight: bold;
 }
 
-.empty-text {
-  color: #a4b0be;
-  font-style: italic;
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.dot-connected {
+  background: var(--tiktok-cyan);
+  box-shadow: 0 0 6px var(--tiktok-cyan);
+}
+
+.dot-connecting,
+.dot-reconnecting {
+  background: var(--color-gift);
+}
+
+.dot-error {
+  background: var(--tiktok-pink);
+}
+
+.status-text {
+  color: var(--text-muted);
+}
+
+/* ---------- Metrics ---------- */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.metric-value {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+/* ---------- Section heading + Realtime columns ---------- */
+.section-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 4px;
+}
+
+.section-heading-row h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.receiving-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tiktok-cyan);
+  background: rgba(37, 244, 238, 0.1);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.columns-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.column-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+}
+
+.col-header h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.col-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.feed-row {
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.chat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.row-time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.row-user {
+  color: #e5e5e5;
+}
+
+.row-text {
+  color: #c7c7c7;
+}
+
+.row-muted {
+  color: var(--text-muted);
+}
+
+.gift-row-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.gift-row-bot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gift-tag {
+  font-size: 12px;
+  color: #c7c7c7;
+}
+
+.diamond-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-gift);
+}
+
+.streak-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.gift-large {
+  border: 1px solid var(--tiktok-pink);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 60px;
+}
+
+/* ---------- Mock toolbar ---------- */
+.bottom-mock-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.mock-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+@media (max-width: 900px) {
+  .columns-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+  }
 }
