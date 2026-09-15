@@ -583,3 +583,71 @@ input:focus {
     flex-direction: row;
   }
 }
+
+/* ==========================================================================
+   FIX TRÀN VIEWPORT & NEO CỐ ĐỊNH HÀNG MOCK DEV TOOLS (GIỮ NGUYÊN SIDEBAR)
+   ========================================================================== */
+
+/* 1. Khóa toàn bộ layout ngoài vào đúng chiều cao màn hình */
+.app-shell {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+}
+
+/* 2. Giữ nguyên chiều rộng Sidebar, neo cứng không cho co dãn */
+.sidebar {
+  height: 100% !important;
+  flex-shrink: 0 !important;
+}
+
+/* 3. Vùng làm việc chính: Biến thành flex-column và chặn tràn dọc */
+.main-area {
+  flex: 1 !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  max-height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  padding-bottom: 12px !important;
+}
+
+/* 4. Khung 3 cột sự kiện: Cho phép co giãn tự do nhưng không được đẩy vỡ layout cha */
+.columns-grid {
+  flex: 1 !important;
+  min-height: 0 !important; /* Điểm cốt lõi kích hoạt overflow con trong Flexbox */
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 12px !important;
+  margin-bottom: 8px !important;
+}
+
+/* 5. Từng thẻ cột: Đặt flex dọc và chứa thanh cuộn riêng biệt */
+.column-card {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.column-card .col-header {
+  flex-shrink: 0 !important;
+}
+
+/* Thanh cuộn độc lập cho mỗi danh sách */
+.column-card .col-body {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+}
+
+/* 6. Neo cứng hàng MOCK DEV TOOLS ở đáy, không bao giờ bị đẩy mất */
+.bottom-mock-bar {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+  z-index: 10 !important;
+}
