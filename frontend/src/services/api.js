@@ -58,7 +58,7 @@ export const api = {
         giftName,
         repeatCount,
         diamondCount,
-        repeatEnd, // Tuân thủ BR-GF-01: Chỉ chốt điểm khi chuỗi kết thúc
+        isStreakFinished: repeatEnd, // Tuân thủ BR-GF-01: Chỉ chốt điểm khi chuỗi kết thúc
         createTime: Date.now(),
       }),
     }),
