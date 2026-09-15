@@ -1,4 +1,5 @@
 const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-live-connector');
+const { eulerApiKey } = require('../config/env');
 const liveStreamRepository = require('../repositories/liveStream.repository');
 const sessionRepository = require('../repositories/session.repository');
 const appUserRepository = require('../repositories/appUser.repository');
@@ -54,7 +55,19 @@ function connectToLiveStream(uniqueId) {
 
   const connection = new TikTokLiveConnection(uniqueId, {
     // No sessionId / cookies provided -> anonymous connection.
-    enableExtendedGiftInfo: true,
+    // enableExtendedGiftInfo fetches the room's gift catalog via the
+    // EulerStream sign server, which now requires a paid Business plan;
+    // on the free tier this makes every connect() attempt fail with
+    // "This endpoint requires a Business plan." Our own gift payload
+    // (giftId/giftName/unitDiamondValue from the GIFT event itself) does
+    // not depend on this catalog, so leave it disabled.
+    enableExtendedGiftInfo: false,
+    // Without a key, WebSocket signing shares Euler Stream's free community
+    // rate-limit pool with every other anonymous user of this library and
+    // fails unpredictably under load. An API key (free signup at
+    // https://www.eulerstream.com) raises that limit; omit the option
+    // entirely when unset so we still fall back to the anonymous pool.
+    ...(eulerApiKey ? { signApiKey: eulerApiKey } : {}),
   });
 
   connectionContexts.set(uniqueId, {
