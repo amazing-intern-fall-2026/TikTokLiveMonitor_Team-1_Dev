@@ -31,31 +31,8 @@ socket.on('connect', () => {
 });
 ```
 
-### C# (.NET — dùng package NuGet `SocketIOClient` 4.0.5)
-
-```csharp
-using SocketIOClient;
-using SocketIOClient.Common;
-
-var client = new SocketIO(new Uri("http://localhost:5000/game"), new SocketIOOptions
-{
-    EIO = EngineIO.V4,
-    Transport = TransportProtocol.WebSocket,
-});
-
-// Namespace được chọn qua URL (.../game), KHÔNG có property Namespace riêng
-client.OnConnected += (sender, e) => Console.WriteLine("Connected to /game");
-
-await client.ConnectAsync();
-```
-
-> Package `SocketIOClient` (NuGet, tác giả doghappy) tương thích
-> Socket.io v4 — khớp version server đang chạy (`socket.io@4.8.3`, xem
-> `backend/package.json`). Team Game tự chọn version phù hợp với engine
-> game đang dùng (Unity, Unreal, …) — bản trên chỉ là ví dụ .NET thuần,
-> **đã build và chạy thật** (`dotnet build` + `dotnet run` nhắm vào
-> backend local, nhận đúng `EFFECT_COMMAND`, gửi lại `EFFECT_ACK`, backend
-> ghi đúng vào `effect_acks`) — không phải code chỉ viết theo suy đoán.
+Implementation mẫu đầy đủ, đã chạy thật với backend (không phải code lý
+thuyết): `backend/mock-game-client.js`.
 
 ---
 
@@ -171,51 +148,11 @@ function handleCommand(command) {
 }
 ```
 
-### C#
-
-```csharp
-using System.Text.Json.Serialization;
-
-client.On("EFFECT_COMMAND", async ctx => await HandleCommand(client, ctx.GetValue<EffectCommand>(0)));
-client.On("CLEAR_ALL_EFFECTS", async ctx => await HandleCommand(client, ctx.GetValue<EffectCommand>(0)));
-
-static async Task HandleCommand(SocketIO client, EffectCommand command)
-{
-    var receivedAt = DateTimeOffset.UtcNow;
-    var isExpired = command.ExpiresAt is not null && receivedAt > DateTimeOffset.Parse(command.ExpiresAt);
-
-    if (isExpired)
-    {
-        // Không áp effect. Vẫn phải ack lại để Monitor biết là bị bỏ qua.
-        await client.EmitAsync("EFFECT_ACK", new object[] {
-            new { commandId = command.CommandId, status = "EXPIRED", reason = "expiresAt already passed on arrival" }
-        });
-        return;
-    }
-
-    ApplyEffectToCharacter(command); // logic rieng cua Game
-    await client.EmitAsync("EFFECT_ACK", new object[] { new { commandId = command.CommandId, status = "APPLIED" } });
-}
-
-// JsonPropertyName BẮT BUỘC: SocketIOClient không tự khớp camelCase JSON
-// (commandId) với PascalCase property (CommandId) -- thiếu attribute này,
-// mọi field sẽ deserialize ra null/rỗng một cách âm thầm, không báo lỗi.
-class EffectCommand
-{
-    [JsonPropertyName("commandId")]
-    public string CommandId { get; set; } = "";
-    [JsonPropertyName("effectCode")]
-    public string? EffectCode { get; set; }
-    [JsonPropertyName("expiresAt")]
-    public string? ExpiresAt { get; set; }
-}
-```
-
-Cả 2 đoạn trên **đã build và chạy thật** nhắm vào backend local (không
-phải chỉ viết theo tài liệu SocketIOClient) — JS test qua
-`backend/mock-game-client.js` (nguồn tham chiếu chính thức), C# test qua
-1 console app riêng, cả 2 đều nhận đúng `EFFECT_COMMAND` thật do Rule
-Engine phát và ghi đúng `EFFECT_ACK` vào `effect_acks`.
+Đoạn trên đã test thật qua `backend/mock-game-client.js` — bắn sự kiện
+mock từ nút "MOCK DEV TOOLS" trên dashboard, quan sát: lệnh vẫn còn hạn
+→ ack `APPLIED`; dựng thử timestamp `expiresAt` đã qua → đúng nhánh ack
+`EXPIRED` (test logic 3 trường hợp biên: còn hạn / đã trễ / đúng thời
+điểm hết hạn).
 
 ---
 
@@ -248,4 +185,4 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 - [ ] Danh mục `effectCode` chính thức + tham số mỗi effect (magnitude/duration hợp lệ) — chờ Dev Game xác nhận (OQ-01, `open-questions-devgame.md`)
 - [ ] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — hiện chưa chặn effect mới phát sinh sau khi kill switch
 - [ ] Token phiên cho kênh `/game` (NFR-SEC-02) — hiện chưa yêu cầu xác thực khi connect
-- [ ] Xác nhận engine/ngôn ngữ Game Client thực tế dùng (OQ-04) để chốt SDK Socket.io phù hợp thay vì ví dụ `SocketIOClient` chung chung ở mục 1
+- [ ] Nếu Game Client không chạy Node.js (Unity/Unreal/…), cần ví dụ tương ứng ngôn ngữ đó — v1.0 này chỉ có mẫu JavaScript
