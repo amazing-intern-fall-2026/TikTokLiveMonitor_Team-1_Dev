@@ -8,6 +8,7 @@ const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
+const ruleEngine = require('./RuleEngine.service');
 
 /**
  * tiktok-live-connector's WebcastEvent.MEMBER also fires for actions other
@@ -151,6 +152,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('CHAT', envelope);
+    ruleEngine.processEvent(envelope);
     persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
   });
 
@@ -176,6 +178,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('GIFT', envelope);
+    ruleEngine.processEvent(envelope);
     persistEvent(uniqueId, 'GIFT', envelope.user, {
       giftId: envelope.payload.giftId,
       giftName: envelope.payload.giftName,
@@ -207,6 +210,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('MEMBER_JOIN', envelope);
+    ruleEngine.processEvent(envelope);
     persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
   });
 
