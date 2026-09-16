@@ -14,4 +14,16 @@ function create({ ruleId = null, eventId = null, payload, status = 'SENT' }) {
     .then((result) => result.rows[0]);
 }
 
-module.exports = { create };
+/**
+ * Looks up the effect_commands row whose payload carries this commandId (the
+ * UUID the Game Client actually sees -- effect_commands.id is our own
+ * internal PK, never sent to the client) so an incoming EffectAck can be
+ * linked back to it.
+ */
+function findByCommandId(commandId) {
+  return db
+    .query("SELECT * FROM effect_commands WHERE payload->>'commandId' = $1 ORDER BY id DESC LIMIT 1", [commandId])
+    .then((result) => result.rows[0]);
+}
+
+module.exports = { create, findByCommandId };
