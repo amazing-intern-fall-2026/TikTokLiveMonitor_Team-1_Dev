@@ -16,7 +16,14 @@ function handleCommand(eventName, command) {
   console.log(`\n[${receivedAt.toISOString()}] <<< ${eventName}`);
   console.log(JSON.stringify(command, null, 2));
 
-  const ack = { commandId: command.commandId, status: 'APPLIED' };
+  // BR-EFF-02: if the command already expired in transit, don't apply it --
+  // a "late" effect flickering onto a character after the moment has passed
+  // would just confuse the audience. Ack EXPIRED instead of APPLIED so the
+  // Monitor can show that too.
+  const ack = command.expiresAt && receivedAt.getTime() > new Date(command.expiresAt).getTime()
+    ? { commandId: command.commandId, status: 'EXPIRED', reason: 'expiresAt already passed on arrival' }
+    : { commandId: command.commandId, status: 'APPLIED' };
+
   socket.emit('EFFECT_ACK', ack);
   console.log(`[${new Date().toISOString()}] >>> EFFECT_ACK`, JSON.stringify(ack));
 }

@@ -10,12 +10,22 @@ VALUES ('sample_host', 'Sample live stream', 0);
 -- maxTriggersPerSession/resetMode (same reason). event_type uses this
 -- table's own naming (CHAT/GIFT/JOIN), not the Envelope's (COMMENT/GIFT/JOIN)
 -- -- RuleEngine.service.js translates between the two.
+-- Keywords ("heal"/"slow") and gift amounts are deliberately picked to match
+-- the frontend's MOCK DEV TOOLS buttons ("+ Chat "!HEAL"", "+ Chat "!SLOW"",
+-- "+ Quà Boss 1000💎") so clicking them visibly drives the Rule Engine.
 INSERT INTO rules (name, event_type, condition, effect, is_active) VALUES
 (
-  'Bao comment - GO',
+  'Bao comment - HEAL',
   'CHAT',
-  '{"condition": {"keywords": ["go"], "matchMode": "ANY"}, "threshold": {"metric": "EVENT_COUNT", "value": 3, "window": {"type": "ROLLING", "seconds": 30}}}',
+  '{"condition": {"keywords": ["heal"], "matchMode": "ANY"}, "threshold": {"metric": "EVENT_COUNT", "value": 3, "window": {"type": "ROLLING", "seconds": 30}}}',
   '{"effectCode": "HEAL_HP", "polarity": "BUFF", "target": "ALL_CHARACTERS", "magnitude": 1.2, "durationMs": 8000, "priority": 5, "cooldownMs": 10000, "maxTriggersPerSession": 5, "resetMode": "RESET_ZERO"}',
+  TRUE
+),
+(
+  'Bao comment - SLOW',
+  'CHAT',
+  '{"condition": {"keywords": ["slow"], "matchMode": "ANY"}, "threshold": {"metric": "EVENT_COUNT", "value": 3, "window": {"type": "ROLLING", "seconds": 30}}}',
+  '{"effectCode": "SLOW_DOWN", "polarity": "DEBUFF", "target": "ALL_CHARACTERS", "magnitude": 0.7, "durationMs": 8000, "priority": 5, "cooldownMs": 10000, "maxTriggersPerSession": 5, "resetMode": "RESET_ZERO"}',
   TRUE
 ),
 (
