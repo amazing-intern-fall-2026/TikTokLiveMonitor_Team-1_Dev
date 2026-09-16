@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const ruleRepository = require('../repositories/rule.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
-const { broadcastGameCommand } = require('../sockets/socket.service');
+const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
 
 /**
  * Envelope `type` (SRS 4.1: COMMENT | JOIN | GIFT) vs. the `rules.event_type`
@@ -84,6 +84,7 @@ function processEvent(envelope) {
     }
 
     const counter = accumulate(rule, envelope, match);
+    broadcastProgress(rule, counter);
     evaluateThreshold(rule, envelope, counter);
   }
 }
@@ -187,6 +188,23 @@ function accumulate(rule, envelope, match) {
   }
 
   return counter;
+}
+
+/**
+ * FR-23: pushes the rule's current progress toward its threshold to
+ * /monitor after every contributing event, so the dashboard can render a
+ * live progress bar per rule instead of only finding out once it fires.
+ */
+function broadcastProgress(rule, counter) {
+  const threshold = rule.condition?.threshold || {};
+  broadcastEvent('RULE_PROGRESS', {
+    ruleId: rule.id,
+    ruleName: rule.name,
+    metric: threshold.metric || 'EVENT_COUNT',
+    current: metricValue(rule, counter),
+    target: threshold.value ?? null,
+    onCooldown: Date.now() < counter.cooldownUntil,
+  });
 }
 
 /** Reads the metric this rule actually thresholds on (SRS 6.2: threshold.metric). */

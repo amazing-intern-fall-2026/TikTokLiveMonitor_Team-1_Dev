@@ -7,10 +7,12 @@ nhân vật trong game.
 > **Cập nhật 13/09:** đồng bộ theo `wrapEnvelope()` (commit `6d5bae1`,
 > nhánh `Tai-dev`/`dev`) — đổi field `event` → `type`, gộp `user`/`payload`
 > thành object lồng nhau đúng SRS mục 4.1–4.5, đổi `createTime` (epoch) →
-> `receivedAt` (ISO 8601), bổ sung `roomId`. **Hiện tại `wrapEnvelope()`
-> mới áp dụng cho mock `/api/test-events/*`; `liveStream.service.js`
-> (kết nối live thật) chưa dùng lại helper này — Đạt cần áp dụng trước
-> khi field khớp trên cả 2 luồng.**
+> `receivedAt` (ISO 8601), bổ sung `roomId`.
+>
+> **Cập nhật 16/09:** `liveStream.service.js` (kết nối live thật) đã
+> dùng lại `wrapEnvelope()` từ commit `a91e790` — cả luồng mock lẫn luồng
+> live thật giờ phát cùng một shape Envelope, ghi chú "chưa đồng bộ" ở
+> trên đã lỗi thời, không còn đúng.
 
 ## Kết nối
 
@@ -35,12 +37,10 @@ Mọi event broadcast qua Socket.io đều có chung khung Envelope:
 | `payload` | object | Dữ liệu riêng theo từng `type`, xem chi tiết ở mỗi mục bên dưới |
 | `sourceTimestamp` | string (ISO 8601), optional | Chỉ có nếu phân biệt được thời điểm TikTok phát sinh vs thời điểm backend nhận |
 
-> **Trạng thái hiện tại (09/2026):** `wrapEnvelope()` đã implement và áp
-> dụng cho 3 endpoint mock test-events (`backend/src/utils/envelope.js`).
-> Luồng live thật qua `liveStream.service.js` **chưa** dùng lại helper
-> này — `extractChatData`/`extractGiftData`/`extractRoomUserData` vẫn trả
-> payload phẳng, không có `eventId`/`sessionId`/`seq`. Cần đồng bộ trước
-> demo.
+> **Trạng thái hiện tại (16/09):** `wrapEnvelope()` (`backend/src/utils/envelope.js`)
+> đã áp dụng cho cả 3 endpoint mock test-events **và** luồng live thật
+> qua `liveStream.service.js` — mọi event CHAT/GIFT/MEMBER_JOIN, dù mock
+> hay live, đều có đủ `eventId`/`sessionId`/`seq`.
 
 ---
 
