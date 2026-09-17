@@ -1,26 +1,7 @@
-version: "3.9"
-
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "5000:5000"
-    environment:
-      - PORT=5000
-      - NODE_ENV=development
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/tiktok_live_monitor
-    depends_on:
-      - db
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    depends_on:
-      - backend
-
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
@@ -31,6 +12,56 @@ services:
       - db_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
       - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+    # Lets `backend` actually wait until Postgres accepts connections, not
+    # just until the container process has started (the old `depends_on: -
+    # db` with no condition only guaranteed the latter -- a real source of
+    # "ECONNREFUSED on first request" races on a fresh `docker compose up`).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tiktok_live_monitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/tiktok_live_monitor
+      # Raises the WebSocket-signing rate limit above tiktok-live-connector's
+      # shared anonymous pool (see backend/src/services/liveStream.service.js).
+      # Read from a `.env` file at the repo root (NOT backend/.env, which
+      # only dotenv inside the Node process reads) or from the shell
+      # environment; left blank falls back to the anonymous pool.
+      - EULER_API_KEY=${EULER_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Node is already guaranteed present in this image, so the healthcheck
+    # needs no extra package (node:alpine ships neither curl nor wget).
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
 
 volumes:
   db_data:

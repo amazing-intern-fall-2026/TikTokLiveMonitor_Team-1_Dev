@@ -99,11 +99,15 @@ CREATE TABLE IF NOT EXISTS rule_counters (
 
 -- One row per effect dispatched to the game engine/overlay. rule_id and
 -- event_id are both nullable: an effect can be triggered manually (e.g. the
--- kill switch, FR-30) instead of by a specific rule/live event.
+-- kill switch, FR-30) instead of by a specific rule/live event. session_id
+-- is separate from event_id (which only ties to a specific triggering
+-- event) so a session's full effect log -- including kill switches, which
+-- have no triggering event at all -- can be queried by session alone.
 CREATE TABLE IF NOT EXISTS effect_commands (
     id BIGSERIAL PRIMARY KEY,
     rule_id INTEGER REFERENCES rules(id),
     event_id BIGINT REFERENCES events(id),
+    session_id INTEGER REFERENCES sessions(id),
     payload JSONB NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING | SENT | ACKED | FAILED
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -111,6 +115,7 @@ CREATE TABLE IF NOT EXISTS effect_commands (
 );
 CREATE INDEX idx_effect_commands_rule_id ON effect_commands(rule_id);
 CREATE INDEX idx_effect_commands_event_id ON effect_commands(event_id);
+CREATE INDEX idx_effect_commands_session_id ON effect_commands(session_id);
 CREATE INDEX idx_effect_commands_status ON effect_commands(status);
 
 CREATE TABLE IF NOT EXISTS effect_acks (
@@ -121,3 +126,21 @@ CREATE TABLE IF NOT EXISTS effect_acks (
     acked_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_effect_acks_effect_command_id ON effect_acks(effect_command_id);
+
+-- FR-36: one summary row generated when a session ends (see
+-- sessionReport.service.js), so a past session's report can be re-read
+-- without re-aggregating events/effect_commands every time (FR-38).
+-- UNIQUE on session_id: a session is only ever closed once.
+CREATE TABLE IF NOT EXISTS session_reports (
+    id BIGSERIAL PRIMARY KEY,
+    session_id INTEGER NOT NULL UNIQUE REFERENCES sessions(id),
+    duration_seconds INTEGER NOT NULL,
+    total_comments INTEGER NOT NULL DEFAULT 0,
+    total_joins INTEGER NOT NULL DEFAULT 0,
+    total_gifts INTEGER NOT NULL DEFAULT 0,
+    total_diamonds INTEGER NOT NULL DEFAULT 0,
+    effects_triggered JSONB NOT NULL DEFAULT '[]', -- [{effectCode, ruleId, issuedAt, status}, ...]
+    top_contributors JSONB NOT NULL DEFAULT '{}',  -- {topGifters: [...], topCommenters: [...]}
+    generated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_session_reports_session_id ON session_reports(session_id);
