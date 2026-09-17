@@ -1,4 +1,4 @@
-// src/pages/rules.jsx
+// frontend/src/pages/RulesPage.jsx
 import React, { useState } from 'react';
 
 const INITIAL_RULES = [
