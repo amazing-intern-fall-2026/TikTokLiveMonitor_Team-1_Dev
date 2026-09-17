@@ -5,11 +5,16 @@ import { io } from 'socket.io-client';
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 const MAX_FEED_ITEMS = 200; // NFR-PERF-05 & FR-13: Chống tràn bộ nhớ DOM
 
-// Envelope contract (mục 4.2 SRS) dùng "nickname" và "uniqueId" (field
-// chuẩn của tiktok-live-connector cho @handle thật, LIVE thật không có
-// "username" — field đó chỉ tồn tại ở mock do chính nhóm tự đặt tên).
-function displayName(data) {
-    return data?.nickname || data?.uniqueId || data?.username || 'Khán giả';
+// Helper phân giải tên khán giả chuẩn Envelope Contract (Mục 4.2 SRS)
+function resolveUserName(data, fallback = 'Khán giả') {
+    if (!data) return fallback;
+    return (
+        data.user?.nickname ||
+        data.user?.uniqueId ||
+        data.nickname ||
+        data.username ||
+        fallback
+    );
 }
 
 export function useLiveSocket() {
@@ -39,37 +44,46 @@ export function useLiveSocket() {
             setConnectionStatus((prev) => (prev === 'CONNECTED' ? 'RECONNECTING' : prev));
         });
 
+        // 1. CHAT (SRS 4.3)
         socket.on('CHAT', (data) => {
+            const commentText = data.payload?.text ?? data.comment ?? '';
             const item = {
-                id: `chat_${data.createTime || Date.now()}_${Math.random()}`,
-                user: displayName(data),
-                text: data.comment,
+                id: data.eventId || `chat_${data.createTime || Date.now()}_${Math.random()}`,
+                user: resolveUserName(data, 'Khán giả'),
+                text: commentText,
                 timestamp: data.receivedAt || data.createTime || Date.now(),
             };
             setChatEvents((prev) => [item, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
             setStats((prev) => ({ ...prev, comments: prev.comments + 1 }));
         });
 
+        // 2. MEMBER_JOIN (SRS 4.4)
         socket.on('MEMBER_JOIN', (data) => {
-            if (data.viewerCount !== undefined) setViewerCount(Number(data.viewerCount));
+            const snapshot = data.payload?.viewerCountSnapshot ?? data.viewerCount;
+            if (snapshot !== undefined) setViewerCount(Number(snapshot));
+
             const item = {
-                id: `join_${Date.now()}_${Math.random()}`,
-                user: displayName(data),
+                id: data.eventId || `join_${Date.now()}_${Math.random()}`,
+                user: resolveUserName(data, 'Người xem'),
                 timestamp: data.receivedAt || data.createTime || Date.now(),
             };
             setJoinEvents((prev) => [item, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
             setStats((prev) => ({ ...prev, joins: prev.joins + 1 }));
         });
 
+        // 3. GIFT (SRS 4.5 & BR-GF-01: Chống đếm trùng chuỗi quà)
         socket.on('GIFT', (data) => {
-            const isFinished = data.repeatEnd !== undefined ? Boolean(data.repeatEnd) : true;
-            const calculatedDiamonds = (Number(data.diamondCount) || 0) * (Number(data.repeatCount) || 1);
+            const isFinished = data.payload?.isStreakFinished ?? (data.repeatEnd !== undefined ? Boolean(data.repeatEnd) : true);
+            const repeatCount = Number(data.payload?.repeatCount || data.repeatCount || 1);
+            const unitDiamonds = Number(data.payload?.unitDiamondValue || data.diamondCount || 0);
+            const totalDiamonds = data.payload?.totalDiamondValue ?? (unitDiamonds * repeatCount);
+
             const item = {
-                id: `gift_${Date.now()}_${Math.random()}`,
-                user: displayName(data),
-                giftName: data.giftName,
-                repeatCount: data.repeatCount || 1,
-                diamonds: calculatedDiamonds,
+                id: data.eventId || `gift_${Date.now()}_${Math.random()}`,
+                user: resolveUserName(data, 'Khán giả'),
+                giftName: data.payload?.giftName || data.giftName,
+                repeatCount,
+                diamonds: totalDiamonds,
                 isFinished,
                 timestamp: data.receivedAt || data.createTime || Date.now(),
             };
@@ -77,8 +91,8 @@ export function useLiveSocket() {
             if (isFinished) {
                 setStats((prev) => ({
                     ...prev,
-                    totalGifts: prev.totalGifts + (Number(data.repeatCount) || 1),
-                    diamonds: prev.diamonds + calculatedDiamonds,
+                    totalGifts: prev.totalGifts + repeatCount,
+                    diamonds: prev.diamonds + totalDiamonds,
                 }));
             }
         });
