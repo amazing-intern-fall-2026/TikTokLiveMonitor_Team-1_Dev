@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { normalizeText } = require('../utils/text');
 const ruleRepository = require('../repositories/rule.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
@@ -114,7 +115,7 @@ function matchCondition(rule, envelope) {
 
     const text = payload.textNormalized || '';
     const matchMode = condition.matchMode || 'ANY';
-    const hits = keywords.filter((kw) => text.includes(String(kw).toLowerCase()));
+    const hits = keywords.filter((kw) => text.includes(normalizeText(String(kw))));
     const matched = matchMode === 'ALL' ? hits.length === keywords.length : hits.length > 0;
     return matched ? { matched: true, value: 1, matchedKeyword: hits[0] } : { matched: false };
   }
@@ -154,8 +155,11 @@ function isThrottled(rule, envelope, match) {
   const key = `${rule.id}:${envelope.user?.userId}:${match.matchedKeyword}`;
   const now = Date.now();
   const lastSeen = throttleLog.get(key);
-  throttleLog.set(key, now);
-  return lastSeen !== undefined && now - lastSeen < ANTI_SPAM_WINDOW_MS;
+  if (lastSeen !== undefined && now - lastSeen < ANTI_SPAM_WINDOW_MS) {
+    return true; // within the window — don't extend it
+  }
+  throttleLog.set(key, now); // new window starts from this event
+  return false;
 }
 
 /** Adds this event's contribution to the rule's counter and returns the updated counter. */
