@@ -3,6 +3,7 @@
  * strip Vietnamese diacritics, strip emoji, trim, collapse whitespace.
  */
 function normalizeText(text) {
+  if (!text) return '';
   return text
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')

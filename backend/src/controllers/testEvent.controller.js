@@ -2,6 +2,7 @@ const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
+const ruleEngine = require('../services/RuleEngine.service');
 
 function buildUser(body) {
   return {
@@ -27,6 +28,7 @@ function testChat(req, res) {
   });
 
   broadcastEvent('CHAT', envelope);
+  ruleEngine.processEvent(envelope);
   res.json(envelope);
 }
 
@@ -52,6 +54,7 @@ function testGift(req, res) {
   });
 
   broadcastEvent('GIFT', envelope);
+  ruleEngine.processEvent(envelope);
   res.json(envelope);
 }
 
@@ -67,6 +70,7 @@ function testMemberJoin(req, res) {
   });
 
   broadcastEvent('MEMBER_JOIN', envelope);
+  ruleEngine.processEvent(envelope);
   res.json(envelope);
 }
 
