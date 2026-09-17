@@ -9,6 +9,7 @@ const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
 const ruleEngine = require('./RuleEngine.service');
+const sessionReportService = require('./sessionReport.service');
 
 /**
  * tiktok-live-connector's WebcastEvent.MEMBER also fires for actions other
@@ -152,7 +153,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('CHAT', envelope);
-    ruleEngine.processEvent(envelope);
+    ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
   });
 
@@ -178,7 +179,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('GIFT', envelope);
-    ruleEngine.processEvent(envelope);
+    ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'GIFT', envelope.user, {
       giftId: envelope.payload.giftId,
       giftName: envelope.payload.giftName,
@@ -210,7 +211,7 @@ function registerEventHandlers(connection, uniqueId) {
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('MEMBER_JOIN', envelope);
-    ruleEngine.processEvent(envelope);
+    ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
   });
 
@@ -323,6 +324,10 @@ async function persistEvent(uniqueId, eventType, user, extra) {
  * handler and an explicit disconnectFromLiveStream() call this, and either
  * one may run first depending on whether the library emits the control event
  * synchronously from connection.disconnect().
+ *
+ * FR-35/FR-36: once marked closed, generates and persists the session's
+ * summary report. Best-effort/fire-and-forget (not awaited) -- a report
+ * failure must never delay tearing down the connection.
  */
 async function closeSession(uniqueId, status) {
   const context = connectionContexts.get(uniqueId);
@@ -333,6 +338,9 @@ async function closeSession(uniqueId, status) {
   context.sessionId = null;
   try {
     await sessionRepository.markDisconnected(sessionId, { status });
+    sessionReportService.generateReport(sessionId).catch((err) => {
+      console.error(`[${uniqueId}] Failed to generate session report:`, err.message);
+    });
   } catch (err) {
     console.error(`[${uniqueId}] Failed to mark session ${status}:`, err.message);
   }
@@ -364,6 +372,14 @@ function disconnectCurrentLiveStream() {
   return disconnectFromLiveStream(activeUniqueId);
 }
 
+/** The DB session id of whichever room is currently being monitored, or null if none. Used to attribute manually-triggered effects (e.g. the kill switch) to the right session's log (FR-35). */
+function getCurrentSessionId() {
+  if (!activeUniqueId) {
+    return null;
+  }
+  return connectionContexts.get(activeUniqueId)?.sessionId ?? null;
+}
+
 function getAllLiveStreams() {
   return liveStreamRepository.findAll();
 }
@@ -383,4 +399,5 @@ module.exports = {
   connectToLiveStream,
   disconnectFromLiveStream,
   disconnectCurrentLiveStream,
+  getCurrentSessionId,
 };

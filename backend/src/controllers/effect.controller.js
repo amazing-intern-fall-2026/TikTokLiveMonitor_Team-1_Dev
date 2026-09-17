@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { broadcastGameCommand } = require('../sockets/socket.service');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
+const liveStreamService = require('../services/liveStream.service');
 
 /**
  * FR-33 / BR-EFF-04: immediately clears every effect currently running on
@@ -17,9 +18,11 @@ async function killSwitch(req, res) {
 
   broadcastGameCommand('CLEAR_ALL_EFFECTS', payload);
 
-  effectCommandRepository.create({ payload, status: 'SENT' }).catch((err) => {
-    console.error('Failed to log kill-switch command:', err.message);
-  });
+  effectCommandRepository
+    .create({ sessionId: liveStreamService.getCurrentSessionId(), payload, status: 'SENT' })
+    .catch((err) => {
+      console.error('Failed to log kill-switch command:', err.message);
+    });
 
   res.json(payload);
 }
