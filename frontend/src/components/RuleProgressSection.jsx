@@ -4,42 +4,42 @@ import { io } from 'socket.io-client';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
-const DEFAULT_RULES = [
-    {
-        ruleId: 'RULE-001',
-        name: '!HEAL',
-        source: 'COMMENT',
-        metric: 'EVENT_COUNT',
-        current: 0,
-        target: 1,
-        percent: 0,
-        cooldownRemainingMs: 0
-    },
-    {
-        ruleId: 'RULE-006',
-        name: 'Boss 1000💎',
-        source: 'GIFT',
-        metric: 'DIAMOND_VALUE',
-        current: 0,
-        target: 1000,
-        percent: 0,
-        cooldownRemainingMs: 0
-    }
-];
+// Không dùng dữ liệu rule giả nữa — ruleId thật lấy từ bảng `rules` trên
+// backend, không trùng với "RULE-001"/"RULE-006" đoán trước đây. Bắt đầu
+// rỗng, tự lấp dần khi RULE_PROGRESS thật gửi tới.
+const DEFAULT_RULES = [];
 
 export default function RuleProgressSection() {
     const [rules, setRules] = useState(DEFAULT_RULES);
 
     useEffect(() => {
-        const socket = io(SOCKET_SERVER_URL, {
+        const socket = io(`${SOCKET_SERVER_URL}/monitor`, {
             transports: ['websocket', 'polling'],
             autoConnect: true
         });
 
         socket.on('RULE_PROGRESS', (data) => {
-            if (Array.isArray(data)) {
-                setRules(data);
-            }
+            // Backend bắn 1 object cho từng rule mỗi lần cập nhật (không phải
+            // mảng cả danh sách) — gộp lại theo ruleId, giữ nguyên các rule
+            // khác chưa có cập nhật mới.
+            if (!data || !data.ruleId) return;
+            setRules((prev) => {
+                const idx = prev.findIndex((r) => r.ruleId === data.ruleId);
+                const merged = {
+                    ruleId: data.ruleId,
+                    name: data.ruleName || data.ruleId,
+                    source: data.source,
+                    metric: data.metric,
+                    current: data.current,
+                    target: data.target,
+                    percent: data.target ? Math.min(100, Math.round((data.current / data.target) * 100)) : 0,
+                    cooldownRemainingMs: data.onCooldown ? (prev[idx]?.cooldownRemainingMs || 1000) : 0,
+                };
+                if (idx === -1) return [...prev, merged];
+                const next = [...prev];
+                next[idx] = merged;
+                return next;
+            });
         });
 
         const timer = setInterval(() => {
@@ -84,6 +84,10 @@ export default function RuleProgressSection() {
             >
                 ⚡ FR-23:
             </span>
+
+            {rules.length === 0 && (
+                <span style={{ fontSize: '11px', color: '#75767a' }}>Chưa có rule nào ghi nhận sự kiện</span>
+            )}
 
             {rules.map((rule) => {
                 const isFull = rule.percent >= 100;
