@@ -7,6 +7,7 @@ import { api } from '../services/api';
 import { useLiveSocket } from '../hooks/useLiveSocket';
 import Sidebar from '../components/Sidebar';
 import RulesPage from './RulesPage';
+import RuleProgressSection from '../components/RuleProgressSection';
 
 export default function DashboardPage({ adminUsername, onLogout }) {
   const [activeNav, setActiveNav] = useState('dashboard');
@@ -143,6 +144,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                 <h2>Realtime Events</h2>
                 <p className="page-subtitle">Bình luận · Quà tặng · Hoạt động</p>
               </div>
+              <RuleProgressSection />
               <span className="receiving-pill">● Receiving</span>
             </div>
 
