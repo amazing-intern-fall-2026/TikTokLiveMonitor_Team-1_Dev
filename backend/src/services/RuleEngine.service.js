@@ -3,6 +3,9 @@ const { normalizeText } = require('../utils/text');
 const ruleRepository = require('../repositories/rule.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
+const { makeLogger } = require('../utils/logger');
+
+const logger = makeLogger('RuleEngine');
 
 /**
  * Envelope `type` (SRS 4.1: COMMENT | JOIN | GIFT) vs. the `rules.event_type`
@@ -47,9 +50,9 @@ let dispatchTimer = null;
 async function init() {
   try {
     activeRules = await ruleRepository.findActive();
-    console.log(`[RuleEngine] Loaded ${activeRules.length} active rule(s)`);
+    logger.info(`Loaded ${activeRules.length} active rule(s)`);
   } catch (err) {
-    console.error('[RuleEngine] Failed to load rules, engine will run with 0 rules:', err.message);
+    logger.error('Failed to load rules, engine will run with 0 rules', { error: err.message });
     activeRules = [];
   }
 
@@ -63,8 +66,15 @@ async function init() {
  * mock) right after it's broadcast to /monitor. Evaluates every active rule
  * whose event_type matches, accumulates thresholds, and enqueues an
  * EffectCommand for any rule that just crossed its threshold.
+ *
+ * @param {object} envelope
+ * @param {number|null} [dbSessionId] the numeric `sessions.id` (not
+ *   envelope.sessionId, which is a string and always present) -- only real
+ *   connector events have one; mock events pass nothing, so any resulting
+ *   effect_commands row simply has no session_id (FR-35/FR-36 apply to real
+ *   sessions).
  */
-function processEvent(envelope) {
+function processEvent(envelope, dbSessionId = null) {
   const dbEventType = ENVELOPE_TYPE_TO_RULE_EVENT_TYPE[envelope.type];
   if (!dbEventType) {
     return;
@@ -86,7 +96,7 @@ function processEvent(envelope) {
 
     const counter = accumulate(rule, envelope, match);
     broadcastProgress(rule, counter);
-    evaluateThreshold(rule, envelope, counter);
+    evaluateThreshold(rule, envelope, counter, dbSessionId);
   }
 }
 
@@ -220,7 +230,7 @@ function metricValue(rule, counter) {
 }
 
 /** Fires the rule (enqueues an EffectCommand) if its threshold is met and it isn't on cooldown / already maxed out. */
-function evaluateThreshold(rule, envelope, counter) {
+function evaluateThreshold(rule, envelope, counter, dbSessionId) {
   const threshold = rule.condition?.threshold || {};
   const now = Date.now();
 
@@ -235,10 +245,10 @@ function evaluateThreshold(rule, envelope, counter) {
     return;
   }
 
-  fireRule(rule, envelope, counter, threshold, effect);
+  fireRule(rule, envelope, counter, threshold, effect, dbSessionId);
 }
 
-function fireRule(rule, envelope, counter, threshold, effect) {
+function fireRule(rule, envelope, counter, threshold, effect, dbSessionId) {
   counter.cooldownUntil = Date.now() + (effect.cooldownMs || 0);
   counter.triggerCount += 1;
   // Only SESSION-window counters need an explicit reset -- a ROLLING window
@@ -254,6 +264,7 @@ function fireRule(rule, envelope, counter, threshold, effect) {
   const command = {
     commandId: crypto.randomUUID(),
     sessionId: envelope.sessionId,
+    dbSessionId,
     ruleId: rule.id,
     effectCode: effect.effectCode,
     polarity: effect.polarity,
@@ -271,7 +282,7 @@ function fireRule(rule, envelope, counter, threshold, effect) {
   };
 
   effectQueue.push(command);
-  console.log(`[RuleEngine] Rule "${rule.name}" (#${rule.id}) fired -> queued ${command.effectCode}`);
+  logger.info(`Rule fired`, { ruleName: rule.name, ruleId: rule.id, effectCode: command.effectCode });
 }
 
 /** SRS resetMode: RESET_ZERO clears the counter, SUBTRACT_THRESHOLD keeps the overflow (fair for big GIFT spenders, BR-RULE-01). */
@@ -291,23 +302,23 @@ function resetCounter(counter, threshold, effect) {
 function dispatchNext() {
   while (effectQueue.length > 0) {
     effectQueue.sort((a, b) => b.priority - a.priority);
-    const command = effectQueue.shift();
+    const { dbSessionId, ...command } = effectQueue.shift();
 
     if (new Date(command.expiresAt).getTime() < Date.now()) {
-      logCommand(command, 'EXPIRED');
+      logCommand(command, 'EXPIRED', dbSessionId);
       continue; // an expired command doesn't consume this tick's dispatch slot
     }
 
     broadcastGameCommand('EFFECT_COMMAND', command);
-    logCommand(command, 'SENT');
+    logCommand(command, 'SENT', dbSessionId);
     return;
   }
 }
 
-function logCommand(command, status) {
+function logCommand(command, status, dbSessionId) {
   effectCommandRepository
-    .create({ ruleId: command.ruleId, payload: command, status })
-    .catch((err) => console.error('[RuleEngine] Failed to log effect command:', err.message));
+    .create({ ruleId: command.ruleId, sessionId: dbSessionId, payload: command, status })
+    .catch((err) => logger.error('Failed to log effect command', { error: err.message, commandId: command.commandId }));
 }
 
 module.exports = { init, processEvent };

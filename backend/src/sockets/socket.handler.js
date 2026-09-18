@@ -1,19 +1,23 @@
 const effectAckService = require('../services/effectAck.service');
+const { makeLogger } = require('../utils/logger');
+
+const monitorLog = makeLogger('socket/monitor');
+const gameLog = makeLogger('socket/game');
 
 function registerSocketHandlers(io) {
   const monitorNamespace = io.of('/monitor');
   const gameNamespace = io.of('/game');
 
   monitorNamespace.on('connection', (socket) => {
-    console.log(`[monitor] Client connected: ${socket.id}`);
+    monitorLog.info('Client connected', { socketId: socket.id });
 
     socket.on('disconnect', () => {
-      console.log(`[monitor] Client disconnected: ${socket.id}`);
+      monitorLog.info('Client disconnected', { socketId: socket.id });
     });
   });
 
   gameNamespace.on('connection', (socket) => {
-    console.log(`[game] Client connected: ${socket.id}`);
+    gameLog.info('Client connected', { socketId: socket.id });
 
     // BR-EFF-03: Game Client acks every EffectCommand/CLEAR_ALL_EFFECTS it
     // receives so the Monitor can show whether it actually got applied.
@@ -22,7 +26,7 @@ function registerSocketHandlers(io) {
     });
 
     socket.on('disconnect', () => {
-      console.log(`[game] Client disconnected: ${socket.id}`);
+      gameLog.info('Client disconnected', { socketId: socket.id });
     });
   });
 }
