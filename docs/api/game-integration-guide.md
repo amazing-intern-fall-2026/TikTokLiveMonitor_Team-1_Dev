@@ -31,6 +31,23 @@ socket.on('connect', () => {
 });
 ```
 
+### C# (.NET — dùng thư viện `SocketIOClient`)
+
+Cài package: `dotnet add package SocketIOClient`
+
+```csharp
+using SocketIOClient;
+
+var socket = new SocketIOClient.SocketIO("http://localhost:5000/game");
+
+socket.OnConnected += (sender, e) =>
+{
+    Console.WriteLine($"Connected to /game as {socket.Id}");
+};
+
+await socket.ConnectAsync();
+```
+
 Implementation mẫu đầy đủ, đã chạy thật với backend (không phải code lý
 thuyết): `backend/mock-game-client.js`.
 
@@ -154,6 +171,46 @@ mock từ nút "MOCK DEV TOOLS" trên dashboard, quan sát: lệnh vẫn còn h�
 `EXPIRED` (test logic 3 trường hợp biên: còn hạn / đã trễ / đúng thời
 điểm hết hạn).
 
+### C#
+
+```csharp
+public class EffectCommand
+{
+    public string CommandId { get; set; }
+    public string ExpiresAt { get; set; }
+    // ... các field khác giữ nguyên tên như JSON (dùng JsonPropertyName nếu cần map camelCase)
+}
+
+socket.On("EFFECT_COMMAND", response => HandleCommand(response.GetValue<EffectCommand>()));
+socket.On("CLEAR_ALL_EFFECTS", response => HandleCommand(response.GetValue<EffectCommand>()));
+
+async void HandleCommand(EffectCommand command)
+{
+    var receivedAt = DateTime.UtcNow;
+    var isExpired = !string.IsNullOrEmpty(command.ExpiresAt)
+        && receivedAt > DateTime.Parse(command.ExpiresAt).ToUniversalTime();
+
+    if (isExpired)
+    {
+        // Không áp effect. Vẫn phải ack lại để Monitor biết là bị bỏ qua.
+        await socket.EmitAsync("EFFECT_ACK", new
+        {
+            commandId = command.CommandId,
+            status = "EXPIRED",
+            reason = "expiresAt already passed on arrival"
+        });
+        return;
+    }
+
+    ApplyEffectToCharacter(command); // logic riêng của Game
+    await socket.EmitAsync("EFFECT_ACK", new { commandId = command.CommandId, status = "APPLIED" });
+}
+```
+
+*(Lưu ý: đoạn C# này chưa được test thật với backend như bản JavaScript
+— team Game nên tự verify khi tích hợp thật, khác với cam kết "đã test
+thật" của bản JS.)*
+
 ---
 
 ## 5. Trả kết quả — event `EFFECT_ACK` (BR-EFF-03)
@@ -185,4 +242,4 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 - [ ] Danh mục `effectCode` chính thức + tham số mỗi effect (magnitude/duration hợp lệ) — chờ Dev Game xác nhận (OQ-01, `open-questions-devgame.md`)
 - [ ] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — hiện chưa chặn effect mới phát sinh sau khi kill switch
 - [ ] Token phiên cho kênh `/game` (NFR-SEC-02) — hiện chưa yêu cầu xác thực khi connect
-- [ ] Nếu Game Client không chạy Node.js (Unity/Unreal/…), cần ví dụ tương ứng ngôn ngữ đó — v1.0 này chỉ có mẫu JavaScript
+- [ ] Ví dụ C# đã bổ sung (16/09) nhưng CHƯA test thật với backend như bản JavaScript — cần Game team tự verify khi tích hợp, hoặc team Backend test lại bằng 1 client C# mẫu trước khi coi là "đã kiểm chứng"
