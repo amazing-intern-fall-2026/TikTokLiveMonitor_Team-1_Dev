@@ -37,6 +37,8 @@ services:
       # only dotenv inside the Node process reads) or from the shell
       # environment; left blank falls back to the anonymous pool.
       - EULER_API_KEY=${EULER_API_KEY:-}
+      # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
+      - LOG_LEVEL=info
     depends_on:
       db:
         condition: service_healthy

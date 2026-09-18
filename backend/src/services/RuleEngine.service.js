@@ -3,6 +3,9 @@ const { normalizeText } = require('../utils/text');
 const ruleRepository = require('../repositories/rule.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
+const { makeLogger } = require('../utils/logger');
+
+const logger = makeLogger('RuleEngine');
 
 /**
  * Envelope `type` (SRS 4.1: COMMENT | JOIN | GIFT) vs. the `rules.event_type`
@@ -47,9 +50,9 @@ let dispatchTimer = null;
 async function init() {
   try {
     activeRules = await ruleRepository.findActive();
-    console.log(`[RuleEngine] Loaded ${activeRules.length} active rule(s)`);
+    logger.info(`Loaded ${activeRules.length} active rule(s)`);
   } catch (err) {
-    console.error('[RuleEngine] Failed to load rules, engine will run with 0 rules:', err.message);
+    logger.error('Failed to load rules, engine will run with 0 rules', { error: err.message });
     activeRules = [];
   }
 
@@ -279,7 +282,7 @@ function fireRule(rule, envelope, counter, threshold, effect, dbSessionId) {
   };
 
   effectQueue.push(command);
-  console.log(`[RuleEngine] Rule "${rule.name}" (#${rule.id}) fired -> queued ${command.effectCode}`);
+  logger.info(`Rule fired`, { ruleName: rule.name, ruleId: rule.id, effectCode: command.effectCode });
 }
 
 /** SRS resetMode: RESET_ZERO clears the counter, SUBTRACT_THRESHOLD keeps the overflow (fair for big GIFT spenders, BR-RULE-01). */
@@ -315,7 +318,7 @@ function dispatchNext() {
 function logCommand(command, status, dbSessionId) {
   effectCommandRepository
     .create({ ruleId: command.ruleId, sessionId: dbSessionId, payload: command, status })
-    .catch((err) => console.error('[RuleEngine] Failed to log effect command:', err.message));
+    .catch((err) => logger.error('Failed to log effect command', { error: err.message, commandId: command.commandId }));
 }
 
 module.exports = { init, processEvent };

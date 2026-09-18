@@ -10,6 +10,9 @@ const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
 const ruleEngine = require('./RuleEngine.service');
 const sessionReportService = require('./sessionReport.service');
+const { makeLogger } = require('../utils/logger');
+
+const logger = makeLogger('liveStream');
 
 /**
  * tiktok-live-connector's WebcastEvent.MEMBER also fires for actions other
@@ -85,7 +88,7 @@ function connectToLiveStream(uniqueId) {
   return connection
     .connect()
     .then(async (state) => {
-      console.log(`[${uniqueId}] Connected to roomId ${state.roomId}`);
+      logger.info('Connected', { uniqueId, roomId: state.roomId });
       const context = connectionContexts.get(uniqueId);
       if (context) {
         context.roomId = state.roomId;
@@ -102,13 +105,13 @@ function connectToLiveStream(uniqueId) {
           context.sessionId = session.id;
         }
       } catch (err) {
-        console.error(`[${uniqueId}] Failed to open a DB session (events will not be persisted):`, err.message);
+        logger.error('Failed to open a DB session (events will not be persisted)', { uniqueId, error: err.message });
       }
 
       return state;
     })
     .catch((err) => {
-      console.error(`[${uniqueId}] Failed to connect:`, err.message);
+      logger.error('Failed to connect', { uniqueId, error: err.message });
       activeConnections.delete(uniqueId);
       connectionContexts.delete(uniqueId);
       if (activeUniqueId === uniqueId) {
@@ -120,11 +123,11 @@ function connectToLiveStream(uniqueId) {
 
 function registerEventHandlers(connection, uniqueId) {
   connection.on(ControlEvent.CONNECTED, (state) => {
-    console.log(`[${uniqueId}] connected, roomId=${state.roomId}`);
+    logger.info('Connector established', { uniqueId, roomId: state.roomId });
   });
 
   connection.on(ControlEvent.DISCONNECTED, () => {
-    console.log(`[${uniqueId}] disconnected`);
+    logger.info('Connector disconnected', { uniqueId });
     closeSession(uniqueId, 'disconnected');
     activeConnections.delete(uniqueId);
     connectionContexts.delete(uniqueId);
@@ -134,7 +137,7 @@ function registerEventHandlers(connection, uniqueId) {
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
-    console.error(`[${uniqueId}] connection error:`, err.message || err);
+    logger.error('Connector error', { uniqueId, error: err.message || String(err) });
   });
 
   // Chat message -> broadcast as a COMMENT envelope on the 'CHAT' channel.
@@ -159,6 +162,16 @@ function registerEventHandlers(connection, uniqueId) {
 
   // Gift sent by a viewer -> broadcast as a GIFT envelope.
   connection.on(WebcastEvent.GIFT, (data) => {
+    // BR-GF-05: warn when the TikTok payload omits the diamond value so operators
+    // know the gift will be counted as 0 diamonds and may not trigger diamond-based rules.
+    if (data.gift?.diamondCount == null) {
+      logger.warn('BR-GF-05: gift received with unknown diamond value (defaulting to 0)', {
+        uniqueId,
+        giftId: data.giftId ?? data.gift?.id,
+        giftName: data.gift?.name ?? 'Unknown Gift',
+      });
+    }
+
     const unitDiamondValue = data.gift?.diamondCount ?? 0;
     const repeatCount = data.repeatCount ?? 1;
     const totalDiamondValue = unitDiamondValue * repeatCount;
@@ -224,7 +237,7 @@ function registerEventHandlers(connection, uniqueId) {
       return;
     }
     liveStreamRepository.updateViewerCount(context.liveStreamId, viewerCount).catch((err) => {
-      console.error(`[${uniqueId}] Failed to update viewer count:`, err.message);
+      logger.error('Failed to update viewer count', { uniqueId, error: err.message });
     });
   });
 }
@@ -314,7 +327,7 @@ async function persistEvent(uniqueId, eventType, user, extra) {
       await eventRepository.insertJoinEvent(base);
     }
   } catch (err) {
-    console.error(`[${uniqueId}] Failed to persist ${eventType} event:`, err.message);
+    logger.error(`Failed to persist ${eventType} event`, { uniqueId, error: err.message });
   }
 }
 
@@ -342,7 +355,7 @@ async function closeSession(uniqueId, status) {
       console.error(`[${uniqueId}] Failed to generate session report:`, err.message);
     });
   } catch (err) {
-    console.error(`[${uniqueId}] Failed to mark session ${status}:`, err.message);
+    logger.error(`Failed to mark session ${status}`, { uniqueId, sessionId, error: err.message });
   }
 }
 

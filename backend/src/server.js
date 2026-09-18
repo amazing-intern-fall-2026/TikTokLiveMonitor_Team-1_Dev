@@ -3,10 +3,13 @@ const { Server } = require('socket.io');
 
 const app = require('./app');
 const { port } = require('./config/env');
+const { makeLogger } = require('./utils/logger');
 
 const registerSocketHandlers = require('./sockets/socket.handler');
 const { initializeSocket } = require('./sockets/socket.service');
 const ruleEngine = require('./services/RuleEngine.service');
+
+const logger = makeLogger('server');
 
 const server = http.createServer(app);
 
@@ -21,5 +24,5 @@ registerSocketHandlers(io);
 ruleEngine.init();
 
 server.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  logger.info(`Server is running on http://localhost:${port}`);
 });
