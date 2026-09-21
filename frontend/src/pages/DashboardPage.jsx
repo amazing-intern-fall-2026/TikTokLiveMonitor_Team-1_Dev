@@ -23,6 +23,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     giftEvents,
     viewerCount,
     stats,
+    resetDashboardState,
   } = useLiveSocket();
 
   const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
@@ -37,6 +38,10 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     try {
       setConnectionStatus('CONNECTING');
       await api.connectRoom(cleanUsername);
+      // Vá lỗi chuyển phòng: chủ động đưa feed + metrics về 0 ngay khi đổi
+      // @handle kết nối thành công, không đợi SESSION_RESET từ backend
+      // (backend chưa phát event này) -- xem ghi chú trong useLiveSocket.js.
+      resetDashboardState();
       setActiveRoom(cleanUsername);
       setConnectionStatus('CONNECTED');
     } catch (err) {
@@ -179,8 +184,18 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                           <strong className="row-user">{e.user}</strong>
                         </div>
                         <div className="gift-row-bot">
+                          {/* Render Icon Quà: giftImageUrl là optional (BR-DATA-01) --
+                              chưa có ảnh (backend chưa gửi / lỗi tải) thì ẩn hẳn <img>
+                              thay vì hiện icon vỡ, feed vẫn hiển thị đủ tên + số lượng. */}
                           {e.giftImageUrl && (
-                            <img className="gift-icon" src={e.giftImageUrl} alt={e.giftName} width={20} height={20} />
+                            <img
+                              src={e.giftImageUrl}
+                              alt={e.giftName || 'Quà tặng'}
+                              className="gift-icon"
+                              width={20}
+                              height={20}
+                              onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
+                            />
                           )}
                           <span className="gift-tag">{e.repeatCount}x {e.giftName}</span>
                           <span className="diamond-tag">+{e.diamonds} 💎</span>
