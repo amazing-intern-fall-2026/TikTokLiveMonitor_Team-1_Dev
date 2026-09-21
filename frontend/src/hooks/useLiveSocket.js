@@ -71,6 +71,13 @@ export function useLiveSocket() {
             setStats((prev) => ({ ...prev, joins: prev.joins + 1 }));
         });
 
+        // 2b. VIEWER_COUNT -- periodic tick from ROOM_USER, updates the live count
+        // directly instead of waiting for the next JOIN to carry a snapshot.
+        socket.on('VIEWER_COUNT', (data) => {
+            const count = data.payload?.viewerCount;
+            if (count !== undefined) setViewerCount(Number(count));
+        });
+
         // 3. GIFT (SRS 4.5 & BR-GF-01: Chống đếm trùng chuỗi quà)
         socket.on('GIFT', (data) => {
             const isFinished = data.payload?.isStreakFinished ?? (data.repeatEnd !== undefined ? Boolean(data.repeatEnd) : true);
@@ -82,6 +89,7 @@ export function useLiveSocket() {
                 id: data.eventId || `gift_${Date.now()}_${Math.random()}`,
                 user: resolveUserName(data, 'Khán giả'),
                 giftName: data.payload?.giftName || data.giftName,
+                giftImageUrl: data.payload?.giftImageUrl,
                 repeatCount,
                 diamonds: totalDiamonds,
                 isFinished,

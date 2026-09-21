@@ -179,6 +179,9 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                           <strong className="row-user">{e.user}</strong>
                         </div>
                         <div className="gift-row-bot">
+                          {e.giftImageUrl && (
+                            <img className="gift-icon" src={e.giftImageUrl} alt={e.giftName} width={20} height={20} />
+                          )}
                           <span className="gift-tag">{e.repeatCount}x {e.giftName}</span>
                           <span className="diamond-tag">+{e.diamonds} 💎</span>
                           {!e.isFinished && <span className="streak-tag">Combo...</span>}

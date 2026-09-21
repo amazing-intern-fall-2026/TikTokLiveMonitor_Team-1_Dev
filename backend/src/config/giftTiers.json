@@ -1,0 +1,8 @@
+{
+  "tiers": [
+    { "max": 99, "tier": "SMALL" },
+    { "max": 499, "tier": "MEDIUM" },
+    { "max": 1999, "tier": "LARGE" }
+  ],
+  "defaultTier": "EPIC"
+}
