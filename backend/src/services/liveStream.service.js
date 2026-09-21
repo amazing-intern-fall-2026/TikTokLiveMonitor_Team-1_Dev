@@ -4,6 +4,7 @@ const liveStreamRepository = require('../repositories/liveStream.repository');
 const sessionRepository = require('../repositories/session.repository');
 const appUserRepository = require('../repositories/appUser.repository');
 const eventRepository = require('../repositories/event.repository');
+const rawLiveEventRepository = require('../repositories/rawLiveEvent.repository');
 const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
@@ -158,6 +159,7 @@ function registerEventHandlers(connection, uniqueId) {
     broadcastEvent('CHAT', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
+    persistRawEvent(uniqueId, envelope);
   });
 
   // Gift sent by a viewer -> broadcast as a GIFT envelope.
@@ -201,6 +203,7 @@ function registerEventHandlers(connection, uniqueId) {
       repeatEnd: envelope.payload.isStreakFinished,
       occurredAt: toDate(envelope.sourceTimestamp),
     });
+    persistRawEvent(uniqueId, envelope);
   });
 
   // Member joined the room -> broadcast as a JOIN envelope on 'MEMBER_JOIN'.
@@ -226,6 +229,7 @@ function registerEventHandlers(connection, uniqueId) {
     broadcastEvent('MEMBER_JOIN', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
+    persistRawEvent(uniqueId, envelope);
   });
 
   // Periodic viewer-count tick -- NOT a per-viewer event, so it only updates
@@ -328,6 +332,34 @@ async function persistEvent(uniqueId, eventType, user, extra) {
     }
   } catch (err) {
     logger.error(`Failed to persist ${eventType} event`, { uniqueId, error: err.message });
+  }
+}
+
+/**
+ * Analytics warehouse (raw_live_events): stores the full Envelope verbatim,
+ * independent of persistEvent()'s normalized write -- separate table,
+ * separate write, so one failing never blocks the other. Same "only if a DB
+ * session is open" gate as persistEvent(), and same fire-and-forget
+ * best-effort contract as everything else in this file.
+ */
+async function persistRawEvent(uniqueId, envelope) {
+  const context = connectionContexts.get(uniqueId);
+  if (!context?.sessionId) {
+    return;
+  }
+  try {
+    await rawLiveEventRepository.create({
+      eventId: envelope.eventId,
+      sessionId: context.sessionId,
+      eventType: envelope.type,
+      rawPayload: envelope,
+    });
+  } catch (err) {
+    // 23505 = unique_violation on event_id -- FR-19's DB-level dedup backstop
+    // catching a redelivered event; expected occasionally, not a real error.
+    if (err.code !== '23505') {
+      logger.error('Failed to persist raw event', { uniqueId, eventId: envelope.eventId, error: err.message });
+    }
   }
 }
 
