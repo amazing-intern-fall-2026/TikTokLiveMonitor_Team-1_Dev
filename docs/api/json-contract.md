@@ -101,6 +101,7 @@ Phát khi có người xem tặng quà (bao gồm combo quà đang được gộ
   "payload": {
     "giftId": 5655,
     "giftName": "Rose",
+    "giftImageUrl": "https://p16-webcast.tiktokcdn.com/img/.../rose~tplv-obj.png",
     "unitDiamondValue": 1,
     "repeatCount": 10,
     "totalDiamondValue": 10,
@@ -115,12 +116,13 @@ Phát khi có người xem tặng quà (bao gồm combo quà đang được gộ
 |---|---|---|
 | `giftId` | number | ID quà tặng theo TikTok |
 | `giftName` | string | Tên quà (vd: "Rose") |
+| `giftImageUrl` | string \| undefined | URL icon quà (`giftDetails.giftImage.image_url` từ TikTok) — có thể `undefined` nếu TikTok không kèm ảnh |
 | `unitDiamondValue` | number | Giá trị kim cương của **1 đơn vị** quà |
 | `repeatCount` | number | Số lượng đã tặng trong combo |
 | `totalDiamondValue` | number | = `unitDiamondValue * repeatCount` — backend **đã tính sẵn**, Game không cần tự nhân |
 | `isStreakable` | boolean | Quà này có cơ chế combo hay không |
 | `isStreakFinished` | boolean | `true` khi combo đã kết thúc — **Game chỉ nên trigger hiệu ứng khi `isStreakFinished === true`** |
-| `giftTier` | string enum | `SMALL` (≤99 kim cương) \| `MEDIUM` (≤499) \| `LARGE` (≤1999) \| `EPIC` (>1999) — ngưỡng hiện đang **hardcode**, sẽ cho Admin cấu hình sau (BR-GF-04) |
+| `giftTier` | string enum | `SMALL` (≤99 kim cương) \| `MEDIUM` (≤499) \| `LARGE` (≤1999) \| `EPIC` (>1999) — ngưỡng đọc động từ `backend/src/config/giftTiers.json`, chỉnh sửa không cần deploy lại (BR-GF-04) |
 
 **Gợi ý cho Game:** map `giftId`/`giftTier` sang loại hiệu ứng (buff/debuff) theo bảng cấu hình riêng; dùng `totalDiamondValue` để tính độ mạnh hiệu ứng.
 
@@ -143,7 +145,8 @@ Phát khi có người xem tặng quà (bao gồm combo quà đang được gộ
   },
   "payload": {
     "isFirstJoinInSession": true,
-    "joinCountInSession": 1
+    "joinCountInSession": 1,
+    "isBacklog": false
   }
 }
 ```
@@ -152,6 +155,7 @@ Phát khi có người xem tặng quà (bao gồm combo quà đang được gộ
 |---|---|---|
 | `isFirstJoinInSession` | boolean | User này có phải lần đầu vào phòng trong phiên hiện tại không |
 | `joinCountInSession` | number | Số lần user này đã join trong phiên |
+| `isBacklog` | boolean | `true` nếu JOIN này đến trong vòng 10s đầu sau khi connect — TikTok replay các viewer đã ở sẵn trong phòng thay vì người mới vào thật (BR-JN-04) |
 
 > **Giới hạn của kết nối ẩn danh (quan trọng — vẫn còn hiệu lực):** ở
 > mock test-events, `isFirstJoinInSession`/`joinCountInSession` được set

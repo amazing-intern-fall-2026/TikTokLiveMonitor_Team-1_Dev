@@ -192,6 +192,8 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                               src={e.giftImageUrl}
                               alt={e.giftName || 'Quà tặng'}
                               className="gift-icon"
+                              width={20}
+                              height={20}
                               onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
                             />
                           )}

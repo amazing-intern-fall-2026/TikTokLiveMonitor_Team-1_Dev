@@ -4,6 +4,7 @@ const liveStreamRepository = require('../repositories/liveStream.repository');
 const sessionRepository = require('../repositories/session.repository');
 const appUserRepository = require('../repositories/appUser.repository');
 const eventRepository = require('../repositories/event.repository');
+const rawLiveEventRepository = require('../repositories/rawLiveEvent.repository');
 const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
@@ -22,6 +23,14 @@ const logger = makeLogger('liveStream');
  * is treated as a join so we fail open rather than silently drop real events.
  */
 const MEMBER_ACTION_SUBSCRIBED = 3;
+
+/**
+ * BR-JN-04: JOIN events TikTok replays for viewers who were already in the
+ * room before we connected arrive in a burst right after CONNECTED fires --
+ * flag anything in that opening window as backlog rather than a real,
+ * newly-arriving viewer.
+ */
+const BACKLOG_WINDOW_MS = 10000;
 
 /**
  * Active anonymous connections keyed by TikTok username, so a duplicate
@@ -80,6 +89,7 @@ function connectToLiveStream(uniqueId) {
     joinCounts: new Map(),
     liveStreamId: null,
     sessionId: null,
+    connectedAt: null,
   });
   registerEventHandlers(connection, uniqueId);
   activeConnections.set(uniqueId, connection);
@@ -92,6 +102,7 @@ function connectToLiveStream(uniqueId) {
       const context = connectionContexts.get(uniqueId);
       if (context) {
         context.roomId = state.roomId;
+        context.connectedAt = Date.now();
       }
 
       // Best-effort: persistence must never block or break the live relay,
@@ -158,6 +169,7 @@ function registerEventHandlers(connection, uniqueId) {
     broadcastEvent('CHAT', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
+    persistRawEvent(uniqueId, envelope);
   });
 
   // Gift sent by a viewer -> broadcast as a GIFT envelope.
@@ -182,6 +194,7 @@ function registerEventHandlers(connection, uniqueId) {
       payload: {
         giftId: data.giftId ?? data.gift?.id,
         giftName: data.gift?.name ?? 'Unknown Gift',
+        giftImageUrl: data.giftDetails?.giftImage?.image_url,
         unitDiamondValue,
         repeatCount,
         totalDiamondValue,
@@ -201,6 +214,7 @@ function registerEventHandlers(connection, uniqueId) {
       repeatEnd: envelope.payload.isStreakFinished,
       occurredAt: toDate(envelope.sourceTimestamp),
     });
+    persistRawEvent(uniqueId, envelope);
   });
 
   // Member joined the room -> broadcast as a JOIN envelope on 'MEMBER_JOIN'.
@@ -213,6 +227,8 @@ function registerEventHandlers(connection, uniqueId) {
 
     const user = extractUser(data.user);
     const { isFirstJoinInSession, joinCountInSession } = trackJoin(uniqueId, user.userId);
+    const connectedAt = connectionContexts.get(uniqueId)?.connectedAt;
+    const isBacklog = connectedAt != null && Date.now() - connectedAt < BACKLOG_WINDOW_MS;
     const envelope = wrapEnvelope({
       type: 'JOIN',
       roomId: String(getRoomId(uniqueId)),
@@ -220,20 +236,36 @@ function registerEventHandlers(connection, uniqueId) {
       payload: {
         isFirstJoinInSession,
         joinCountInSession,
+        isBacklog,
       },
       sourceTimestamp: extractSourceTimestamp(data),
     });
     broadcastEvent('MEMBER_JOIN', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
+    persistRawEvent(uniqueId, envelope);
   });
 
-  // Periodic viewer-count tick -- NOT a per-viewer event, so it only updates
-  // live_streams.viewer_count and is never broadcast or turned into an event row.
+  // Periodic viewer-count tick -- not a per-viewer action, so it's not run
+  // through the RuleEngine or persisted as an event row, but it IS broadcast
+  // (VIEWER_COUNT) so the dashboard's live viewer count no longer sits at 0
+  // between JOIN events.
   connection.on(WebcastEvent.ROOM_USER, (data) => {
     const viewerCount = extractViewerCount(data);
+    if (viewerCount === undefined) {
+      return;
+    }
+
+    broadcastEvent('VIEWER_COUNT', wrapEnvelope({
+      type: 'VIEWER_COUNT',
+      roomId: String(getRoomId(uniqueId)),
+      user: null,
+      payload: { viewerCount },
+      sourceTimestamp: extractSourceTimestamp(data),
+    }));
+
     const context = connectionContexts.get(uniqueId);
-    if (viewerCount === undefined || !context?.liveStreamId) {
+    if (!context?.liveStreamId) {
       return;
     }
     liveStreamRepository.updateViewerCount(context.liveStreamId, viewerCount).catch((err) => {
@@ -328,6 +360,34 @@ async function persistEvent(uniqueId, eventType, user, extra) {
     }
   } catch (err) {
     logger.error(`Failed to persist ${eventType} event`, { uniqueId, error: err.message });
+  }
+}
+
+/**
+ * Analytics warehouse (raw_live_events): stores the full Envelope verbatim,
+ * independent of persistEvent()'s normalized write -- separate table,
+ * separate write, so one failing never blocks the other. Same "only if a DB
+ * session is open" gate as persistEvent(), and same fire-and-forget
+ * best-effort contract as everything else in this file.
+ */
+async function persistRawEvent(uniqueId, envelope) {
+  const context = connectionContexts.get(uniqueId);
+  if (!context?.sessionId) {
+    return;
+  }
+  try {
+    await rawLiveEventRepository.create({
+      eventId: envelope.eventId,
+      sessionId: context.sessionId,
+      eventType: envelope.type,
+      rawPayload: envelope,
+    });
+  } catch (err) {
+    // 23505 = unique_violation on event_id -- FR-19's DB-level dedup backstop
+    // catching a redelivered event; expected occasionally, not a real error.
+    if (err.code !== '23505') {
+      logger.error('Failed to persist raw event', { uniqueId, eventId: envelope.eventId, error: err.message });
+    }
   }
 }
 

@@ -144,3 +144,60 @@ CREATE TABLE IF NOT EXISTS session_reports (
     generated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_session_reports_session_id ON session_reports(session_id);
+
+-- ============================================================================
+-- Analytics warehouse -- distinct from the operational tables above (events/
+-- session_reports). Denormalized on purpose: these two tables exist so
+-- analytics/BI tooling can query without joining the normalized OLTP schema,
+-- and so the original event JSON survives even if normalization logic
+-- changes later. NOT written to by the same code path as `events` --
+-- populated by liveStream.service.js (raw_live_events, per real event) and
+-- sessionReport.service.js (session_analytics_summary, on disconnect).
+-- ============================================================================
+
+-- Raw copy of every Envelope as received, verbatim, independent of the
+-- normalized events/comment_payloads/join_payloads/gift_payloads split.
+-- event_id UNIQUE doubles as a database-level backstop for FR-19 dedup: the
+-- in-memory LRU (RuleEngine.service.js/eventDedup.service.js) is the fast
+-- path, but it resets on process restart -- this constraint still catches a
+-- redelivered event after a restart, at insert time.
+CREATE TABLE IF NOT EXISTS raw_live_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_id UUID NOT NULL UNIQUE,
+    session_id INTEGER REFERENCES sessions(id),
+    event_type VARCHAR(20) NOT NULL, -- Envelope.type: COMMENT | GIFT | JOIN
+    raw_payload JSONB NOT NULL,      -- the full Envelope, unmodified
+    received_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_raw_live_events_session_id ON raw_live_events(session_id);
+CREATE INDEX idx_raw_live_events_event_type ON raw_live_events(event_type);
+
+-- One flat, denormalized row per closed session, purpose-built for
+-- cross-session analytics queries (e.g. "average comments/min by streamer")
+-- that would otherwise mean scanning events for every session every time.
+-- Overlaps in subject matter with session_reports (also FR-36) but serves a
+-- different consumer: session_reports is "show me THIS session's report"
+-- (rich JSONB: effect list, top-contributor detail); this table is flat
+-- numeric columns meant for SQL aggregation/BI across MANY sessions at once
+-- and adds rate metrics (FR-17: comments/min, diamonds/min) that
+-- session_reports does not carry.
+CREATE TABLE IF NOT EXISTS session_analytics_summary (
+    id BIGSERIAL PRIMARY KEY,
+    session_id INTEGER NOT NULL UNIQUE REFERENCES sessions(id),
+    live_stream_id INTEGER NOT NULL REFERENCES live_streams(id),
+    host_username VARCHAR(255) NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    ended_at TIMESTAMP,
+    duration_seconds INTEGER NOT NULL,
+    total_events INTEGER NOT NULL DEFAULT 0,
+    total_comments INTEGER NOT NULL DEFAULT 0,
+    total_joins INTEGER NOT NULL DEFAULT 0,
+    total_gifts INTEGER NOT NULL DEFAULT 0,
+    total_diamonds INTEGER NOT NULL DEFAULT 0,
+    unique_viewers INTEGER NOT NULL DEFAULT 0,
+    comments_per_minute NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    diamonds_per_minute NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    total_effects_triggered INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_session_analytics_summary_host_username ON session_analytics_summary(host_username);
