@@ -104,6 +104,13 @@ function topCommenters(sessionId, limit = 5) {
     .then((result) => result.rows);
 }
 
+/** Analytics warehouse (session_analytics_summary): distinct viewers across every event type in the session, regardless of what they did. */
+function countUniqueViewers(sessionId) {
+  return db
+    .query('SELECT COUNT(DISTINCT app_user_id) AS count FROM events WHERE session_id = $1', [sessionId])
+    .then((result) => Number(result.rows[0].count));
+}
+
 module.exports = {
   create,
   findBySessionId,
@@ -112,4 +119,5 @@ module.exports = {
   sumDiamonds,
   topGifters,
   topCommenters,
+  countUniqueViewers,
 };

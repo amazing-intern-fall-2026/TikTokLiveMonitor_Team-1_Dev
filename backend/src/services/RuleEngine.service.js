@@ -4,6 +4,7 @@ const ruleRepository = require('../repositories/rule.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
 const { makeLogger } = require('../utils/logger');
+const eventDedup = require('./eventDedup.service');
 
 const logger = makeLogger('RuleEngine');
 
@@ -77,6 +78,13 @@ async function init() {
 function processEvent(envelope, dbSessionId = null) {
   const dbEventType = ENVELOPE_TYPE_TO_RULE_EVENT_TYPE[envelope.type];
   if (!dbEventType) {
+    return;
+  }
+
+  // FR-19: a redelivered envelope (e.g. a connector-level retry) must not
+  // be counted toward any rule's threshold a second time.
+  if (eventDedup.isDuplicate(envelope.eventId)) {
+    logger.debug('Duplicate eventId, skipping threshold accumulation', { eventId: envelope.eventId });
     return;
   }
 
