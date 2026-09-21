@@ -874,3 +874,11 @@ select:focus {
     overflow: visible;
   }
 }
+
+.gift-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+}

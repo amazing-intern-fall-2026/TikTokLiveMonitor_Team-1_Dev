@@ -4,6 +4,7 @@ const livestreamConnectionRoutes = require('./livestreamConnection.routes');
 const testEventRoutes = require('./testEvent.routes');
 const effectRoutes = require('./effect.routes');
 const sessionReportRoutes = require('./sessionReport.routes');
+const authRoutes = require('./auth.routes');
 
 const router = Router();
 
@@ -12,5 +13,6 @@ router.use('/livestream', livestreamConnectionRoutes);
 router.use('/test-events', testEventRoutes);
 router.use('/effects', effectRoutes);
 router.use('/sessions', sessionReportRoutes);
+router.use('/login', authRoutes);
 
 module.exports = router;
