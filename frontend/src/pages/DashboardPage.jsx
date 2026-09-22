@@ -149,9 +149,10 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                 <h2>Realtime Events</h2>
                 <p className="page-subtitle">Bình luận · Quà tặng · Hoạt động</p>
               </div>
-              <RuleProgressSection />
               <span className="receiving-pill">● Receiving</span>
             </div>
+
+            <RuleProgressSection />
 
             <main className="columns-grid">
               <div className="column-card">
@@ -192,8 +193,6 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                               src={e.giftImageUrl}
                               alt={e.giftName || 'Quà tặng'}
                               className="gift-icon"
-                              width={20}
-                              height={20}
                               onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
                             />
                           )}
