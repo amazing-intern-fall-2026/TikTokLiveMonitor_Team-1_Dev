@@ -2,14 +2,12 @@ const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-liv
 const { eulerApiKey } = require('../config/env');
 const liveStreamRepository = require('../repositories/liveStream.repository');
 const sessionRepository = require('../repositories/session.repository');
-const appUserRepository = require('../repositories/appUser.repository');
-const eventRepository = require('../repositories/event.repository');
-const rawLiveEventRepository = require('../repositories/rawLiveEvent.repository');
 const { broadcastEvent } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
 const ruleEngine = require('./RuleEngine.service');
+const eventBatch = require('./eventBatch.service');
 const sessionReportService = require('./sessionReport.service');
 const { makeLogger } = require('../utils/logger');
 
@@ -158,8 +156,7 @@ function registerEventHandlers(connection, uniqueId) {
     });
     broadcastEvent('CHAT', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
-    persistEvent(uniqueId, 'CHAT', envelope.user, { comment: text, occurredAt: toDate(envelope.sourceTimestamp) });
-    persistRawEvent(uniqueId, envelope);
+    queuePersist(uniqueId, 'CHAT', envelope, { comment: text });
   });
 
   // Gift sent by a viewer -> broadcast as a GIFT envelope.
@@ -195,15 +192,13 @@ function registerEventHandlers(connection, uniqueId) {
     });
     broadcastEvent('GIFT', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
-    persistEvent(uniqueId, 'GIFT', envelope.user, {
+    queuePersist(uniqueId, 'GIFT', envelope, {
       giftId: envelope.payload.giftId,
       giftName: envelope.payload.giftName,
       repeatCount: envelope.payload.repeatCount,
       diamondCount: envelope.payload.unitDiamondValue,
       repeatEnd: envelope.payload.isStreakFinished,
-      occurredAt: toDate(envelope.sourceTimestamp),
     });
-    persistRawEvent(uniqueId, envelope);
   });
 
   // Member joined the room -> broadcast as a JOIN envelope on 'MEMBER_JOIN'.
@@ -228,8 +223,7 @@ function registerEventHandlers(connection, uniqueId) {
     });
     broadcastEvent('MEMBER_JOIN', envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
-    persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
-    persistRawEvent(uniqueId, envelope);
+    queuePersist(uniqueId, 'JOIN', envelope, {});
   });
 
   // Periodic viewer-count tick -- NOT a per-viewer event, so it only updates
@@ -298,69 +292,25 @@ function extractViewerCount(data) {
 }
 
 /**
- * Persists a CHAT/GIFT/JOIN event (upserting the viewer first) if this
- * connection has an open DB session. Fire-and-forget by design: a DB error
- * is logged, never allowed to affect the live Socket.IO relay.
+ * Queues a CHAT/GIFT/JOIN event (both its normalized row and its raw
+ * Envelope copy) for the AsyncEventBatcher instead of writing to Postgres
+ * immediately -- a synchronous push, so it adds no latency to the Fast-Path
+ * Socket broadcast this is called right after. No-op if this connection has
+ * no open DB session (mock/test events never do).
  */
-async function persistEvent(uniqueId, eventType, user, extra) {
+function queuePersist(uniqueId, eventType, envelope, extra) {
   const context = connectionContexts.get(uniqueId);
   if (!context?.sessionId) {
     return;
   }
-
-  try {
-    const appUser = await appUserRepository.upsert({
-      tiktokUserId: user.userId,
-      username: user.uniqueId,
-      nickname: user.nickname,
-    });
-
-    const base = { sessionId: context.sessionId, appUserId: appUser.id, occurredAt: extra.occurredAt };
-    if (eventType === 'CHAT') {
-      await eventRepository.insertCommentEvent({ ...base, comment: extra.comment });
-    } else if (eventType === 'GIFT') {
-      await eventRepository.insertGiftEvent({
-        ...base,
-        giftId: extra.giftId,
-        giftName: extra.giftName,
-        repeatCount: extra.repeatCount,
-        diamondCount: extra.diamondCount,
-        repeatEnd: extra.repeatEnd,
-      });
-    } else if (eventType === 'JOIN') {
-      await eventRepository.insertJoinEvent(base);
-    }
-  } catch (err) {
-    logger.error(`Failed to persist ${eventType} event`, { uniqueId, error: err.message });
-  }
-}
-
-/**
- * Analytics warehouse (raw_live_events): stores the full Envelope verbatim,
- * independent of persistEvent()'s normalized write -- separate table,
- * separate write, so one failing never blocks the other. Same "only if a DB
- * session is open" gate as persistEvent(), and same fire-and-forget
- * best-effort contract as everything else in this file.
- */
-async function persistRawEvent(uniqueId, envelope) {
-  const context = connectionContexts.get(uniqueId);
-  if (!context?.sessionId) {
-    return;
-  }
-  try {
-    await rawLiveEventRepository.create({
-      eventId: envelope.eventId,
-      sessionId: context.sessionId,
-      eventType: envelope.type,
-      rawPayload: envelope,
-    });
-  } catch (err) {
-    // 23505 = unique_violation on event_id -- FR-19's DB-level dedup backstop
-    // catching a redelivered event; expected occasionally, not a real error.
-    if (err.code !== '23505') {
-      logger.error('Failed to persist raw event', { uniqueId, eventId: envelope.eventId, error: err.message });
-    }
-  }
+  eventBatch.enqueue({
+    sessionId: context.sessionId,
+    eventType,
+    user: envelope.user,
+    occurredAt: toDate(envelope.sourceTimestamp),
+    extra,
+    envelope,
+  });
 }
 
 /**
@@ -382,6 +332,9 @@ async function closeSession(uniqueId, status) {
   }
   context.sessionId = null;
   try {
+    // AsyncEventBatcher may still be holding up to 2s/99 events for this
+    // session -- flush them now so the FR-36 report below doesn't miss them.
+    await eventBatch.flush();
     await sessionRepository.markDisconnected(sessionId, { status });
     sessionReportService.generateReport(sessionId).catch((err) => {
       console.error(`[${uniqueId}] Failed to generate session report:`, err.message);

@@ -1,4 +1,5 @@
 const effectAckService = require('../services/effectAck.service');
+const ruleEngine = require('../services/RuleEngine.service');
 const { makeLogger } = require('../utils/logger');
 
 const monitorLog = makeLogger('socket/monitor');
@@ -10,6 +11,13 @@ function registerSocketHandlers(io) {
 
   monitorNamespace.on('connection', (socket) => {
     monitorLog.info('Client connected', { socketId: socket.id });
+
+    // NFR-REL-03: resync this client's progress bars right away instead of
+    // waiting for the next contributing event -- sent only to this socket,
+    // since already-connected clients are already in sync.
+    for (const progress of ruleEngine.getProgressSnapshot()) {
+      socket.emit('RULE_PROGRESS', progress);
+    }
 
     socket.on('disconnect', () => {
       monitorLog.info('Client disconnected', { socketId: socket.id });
