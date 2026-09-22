@@ -33,6 +33,14 @@ const MEMBER_ACTION_SUBSCRIBED = 3;
 const BACKLOG_WINDOW_MS = 10000;
 
 /**
+ * BR-JN-02: a viewer surge (or the BR-JN-04 backlog replay right after
+ * connect) can fire dozens of JOIN events per second -- broadcasting each
+ * one 1:1 would flood the dashboard feed. Queue envelopes per connection and
+ * drain at most one per second instead.
+ */
+const JOIN_BROADCAST_INTERVAL_MS = 1000;
+
+/**
  * Active anonymous connections keyed by TikTok username, so a duplicate
  * connect request reuses the existing socket instead of opening a new one.
  */
@@ -40,9 +48,9 @@ const activeConnections = new Map();
 
 /**
  * Per-connection state that isn't part of the tiktok-live-connector API:
- * the resolved roomId (only known once CONNECTED fires) and a running
- * per-viewer join count for the session, used to fill the JOIN envelope's
- * isFirstJoinInSession/joinCountInSession fields.
+ * the resolved roomId (only known once CONNECTED fires), a running
+ * per-viewer join count for the session (isFirstJoinInSession/
+ * joinCountInSession), and the BR-JN-02 pending-JOIN-broadcast queue/timer.
  */
 const connectionContexts = new Map();
 
@@ -84,13 +92,20 @@ function connectToLiveStream(uniqueId) {
     ...(eulerApiKey ? { signApiKey: eulerApiKey } : {}),
   });
 
-  connectionContexts.set(uniqueId, {
+  const context = {
     roomId: uniqueId,
     joinCounts: new Map(),
     liveStreamId: null,
     sessionId: null,
     connectedAt: null,
-  });
+    joinBroadcastQueue: [],
+    joinBroadcastTimer: null,
+  };
+  connectionContexts.set(uniqueId, context);
+  context.joinBroadcastTimer = setInterval(
+    () => flushJoinBroadcastQueue(uniqueId),
+    JOIN_BROADCAST_INTERVAL_MS
+  );
   registerEventHandlers(connection, uniqueId);
   activeConnections.set(uniqueId, connection);
   activeUniqueId = uniqueId;
@@ -123,6 +138,7 @@ function connectToLiveStream(uniqueId) {
     })
     .catch((err) => {
       logger.error('Failed to connect', { uniqueId, error: err.message });
+      stopJoinBroadcastTimer(uniqueId);
       activeConnections.delete(uniqueId);
       connectionContexts.delete(uniqueId);
       if (activeUniqueId === uniqueId) {
@@ -140,6 +156,7 @@ function registerEventHandlers(connection, uniqueId) {
   connection.on(ControlEvent.DISCONNECTED, () => {
     logger.info('Connector disconnected', { uniqueId });
     closeSession(uniqueId, 'disconnected');
+    stopJoinBroadcastTimer(uniqueId);
     activeConnections.delete(uniqueId);
     connectionContexts.delete(uniqueId);
     if (activeUniqueId === uniqueId) {
@@ -217,7 +234,8 @@ function registerEventHandlers(connection, uniqueId) {
     persistRawEvent(uniqueId, envelope);
   });
 
-  // Member joined the room -> broadcast as a JOIN envelope on 'MEMBER_JOIN'.
+  // Member joined the room -> queue a JOIN envelope for 'MEMBER_JOIN',
+  // broadcast at most one per second (BR-JN-02, see flushJoinBroadcastQueue).
   // (WebcastEvent.ROOM_USER, the periodic viewer-count tick, is intentionally
   // NOT broadcast here -- it doesn't represent a specific viewer action.)
   connection.on(WebcastEvent.MEMBER, (data) => {
@@ -240,7 +258,7 @@ function registerEventHandlers(connection, uniqueId) {
       },
       sourceTimestamp: extractSourceTimestamp(data),
     });
-    broadcastEvent('MEMBER_JOIN', envelope);
+    enqueueJoinBroadcast(uniqueId, envelope);
     ruleEngine.processEvent(envelope, connectionContexts.get(uniqueId)?.sessionId);
     persistEvent(uniqueId, 'JOIN', envelope.user, { occurredAt: toDate(envelope.sourceTimestamp) });
     persistRawEvent(uniqueId, envelope);
@@ -276,6 +294,34 @@ function registerEventHandlers(connection, uniqueId) {
 
 function getRoomId(uniqueId) {
   return connectionContexts.get(uniqueId)?.roomId ?? uniqueId;
+}
+
+/**
+ * BR-JN-02: queues a JOIN envelope instead of broadcasting it immediately --
+ * flushJoinBroadcastQueue() (run on a 1s interval) drains it one at a time.
+ */
+function enqueueJoinBroadcast(uniqueId, envelope) {
+  connectionContexts.get(uniqueId)?.joinBroadcastQueue.push(envelope);
+}
+
+/**
+ * Broadcasts at most one queued JOIN envelope per tick, so 'MEMBER_JOIN'
+ * never fires faster than JOIN_BROADCAST_INTERVAL_MS regardless of how many
+ * real joins arrived in that window (BR-JN-02).
+ */
+function flushJoinBroadcastQueue(uniqueId) {
+  const queue = connectionContexts.get(uniqueId)?.joinBroadcastQueue;
+  if (!queue || queue.length === 0) {
+    return;
+  }
+  broadcastEvent('MEMBER_JOIN', queue.shift());
+}
+
+function stopJoinBroadcastTimer(uniqueId) {
+  const timer = connectionContexts.get(uniqueId)?.joinBroadcastTimer;
+  if (timer) {
+    clearInterval(timer);
+  }
 }
 
 /**
@@ -426,6 +472,7 @@ async function disconnectFromLiveStream(uniqueId) {
   }
   await closeSession(uniqueId, 'disconnected');
   connection.disconnect();
+  stopJoinBroadcastTimer(uniqueId);
   activeConnections.delete(uniqueId);
   connectionContexts.delete(uniqueId);
   if (activeUniqueId === uniqueId) {
