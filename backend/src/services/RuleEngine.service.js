@@ -47,6 +47,29 @@ const throttleLog = new Map();
 const effectQueue = [];
 let dispatchTimer = null;
 
+/**
+ * FR-32: "Tạm dừng effect" -- while true, events are still received,
+ * accumulated into counters and broadcast to /monitor as usual (so
+ * Operator keeps seeing the feed + progress bars), but no rule is allowed
+ * to actually fire an EffectCommand. See evaluateThreshold(), the single
+ * gate point. NOT the same as FR-33 kill switch (effect.controller.js),
+ * which clears effects already running on the Game Client -- pause only
+ * stops *new* effects from being queued.
+ */
+let effectsPaused = false;
+
+/** FR-32: toggles the pause flag and tells /monitor immediately so every open dashboard reflects it without polling. */
+function setEffectsPaused(paused) {
+  effectsPaused = Boolean(paused);
+  broadcastEvent('EFFECT_PAUSE_STATE', { paused: effectsPaused, issuedAt: new Date().toISOString() });
+  logger.info(`Effects ${effectsPaused ? 'paused' : 'resumed'} by operator`);
+  return effectsPaused;
+}
+
+function isEffectsPaused() {
+  return effectsPaused;
+}
+
 /** Loads the active rule set from Postgres and starts the throttled dispatcher. Call once at server startup. */
 async function init() {
   try {
@@ -245,6 +268,13 @@ function evaluateThreshold(rule, envelope, counter, dbSessionId) {
   if (metricValue(rule, counter) < (threshold.value ?? Infinity)) {
     return;
   }
+  // FR-32: threshold met but effects paused -- do NOT fire, and deliberately
+  // do NOT reset/cooldown the counter either (mirrors the cooldown branch
+  // below): once resumed, a rule that was sitting at 100% while paused
+  // should fire on the very next qualifying event, not wait to re-accumulate.
+  if (effectsPaused) {
+    return;
+  }
   if (now < counter.cooldownUntil) {
     return;
   }
@@ -329,4 +359,4 @@ function logCommand(command, status, dbSessionId) {
     .catch((err) => logger.error('Failed to log effect command', { error: err.message, commandId: command.commandId }));
 }
 
-module.exports = { init, processEvent };
+module.exports = { init, processEvent, setEffectsPaused, isEffectsPaused };

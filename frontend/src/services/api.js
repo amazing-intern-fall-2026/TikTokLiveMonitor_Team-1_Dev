@@ -34,6 +34,24 @@ export const api = {
       method: 'POST',
     }),
 
+  // 2b. Tạm dừng / tiếp tục phát effect sang Game, KHÔNG xoá effect đang
+  // chạy (khác Kill-Switch) -- FR-32. Trạng thái pause thật sự luôn được
+  // phát lại qua socket event 'EFFECT_PAUSE_STATE' trên /monitor (xem
+  // useLiveSocket.js); 2 hàm dưới chỉ là cách kích hoạt, không tự set state.
+  pauseEffects: () =>
+    request('/api/effects/pause', {
+      method: 'POST',
+    }),
+
+  resumeEffects: () =>
+    request('/api/effects/resume', {
+      method: 'POST',
+    }),
+
+  // Trạng thái pause hiện tại -- gọi lúc mở dashboard / F5, để không phải
+  // đợi lần EFFECT_PAUSE_STATE broadcast kế tiếp mới biết đang pause hay không.
+  getEffectStatus: () => request('/api/effects/status'),
+
   // 3. Mock Test Suite khớp chính xác với testEvent.routes.js của Thiên Tài (FR-31)
   sendMockChat: (comment = 'GO', username = 'tester_vn', nickname = 'Khán Giả Test') =>
     request('/api/test-events/chat', {
