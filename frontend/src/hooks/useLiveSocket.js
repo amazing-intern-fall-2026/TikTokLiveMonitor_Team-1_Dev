@@ -1,6 +1,7 @@
 // frontend/src/hooks/useLiveSocket.js
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { api } from '../services/api';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 const MAX_FEED_ITEMS = 200; // NFR-PERF-05 & FR-13: Chống tràn bộ nhớ DOM
@@ -26,6 +27,11 @@ export function useLiveSocket() {
     const [giftEvents, setGiftEvents] = useState([]);
     const [viewerCount, setViewerCount] = useState(0);
     const [stats, setStats] = useState(EMPTY_STATS);
+    // FR-32: trạng thái pause effect, đồng bộ qua socket event
+    // 'EFFECT_PAUSE_STATE' trên /monitor (RuleEngine.service.js#setEffectsPaused)
+    // -- không tự đoán/toggle ở FE, luôn tin theo giá trị backend phát ra để
+    // mọi dashboard đang mở (nhiều Operator/tab) thấy đúng cùng 1 trạng thái.
+    const [isPaused, setIsPaused] = useState(false);
 
     const socketRef = useRef(null);
 
@@ -63,6 +69,29 @@ export function useLiveSocket() {
         // RULE_PROGRESS) -- để sẵn nhánh này để cắm vào ngay khi có, không phải
         // chờ backend xong mới sửa FE lần nữa.
         socket.on('SESSION_RESET', resetDashboardState);
+
+        // FR-32: cờ pause do RuleEngine.service.js#setEffectsPaused phát ra
+        // (event 'EFFECT_PAUSE_STATE', payload { paused, issuedAt }) mỗi khi
+        // Operator bấm "Tạm dừng"/"Tiếp tục" ở BẤT KỲ tab nào -- không chỉ
+        // tab vừa bấm, nên nhiều dashboard cùng mở luôn đồng bộ.
+        socket.on('EFFECT_PAUSE_STATE', (data) => {
+            if (typeof data?.paused === 'boolean') {
+                setIsPaused(data.paused);
+            }
+        });
+
+        // Lấy trạng thái pause hiện tại ngay khi mount (mở tab mới / F5) --
+        // không đợi lần EFFECT_PAUSE_STATE broadcast kế tiếp mới biết.
+        api.getEffectStatus()
+            .then((data) => {
+                if (typeof data?.paused === 'boolean') {
+                    setIsPaused(data.paused);
+                }
+            })
+            .catch(() => {
+                // Best-effort: nếu backend chưa có route này (chưa deploy phần
+                // FR-32), giữ nguyên mặc định isPaused=false, không chặn UI.
+            });
 
         // 1. CHAT (SRS 4.3)
         socket.on('CHAT', (data) => {
@@ -141,5 +170,6 @@ export function useLiveSocket() {
         viewerCount,
         stats,
         resetDashboardState,
+        isPaused,
     };
 }

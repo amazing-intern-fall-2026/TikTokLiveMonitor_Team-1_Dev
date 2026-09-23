@@ -24,7 +24,10 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     viewerCount,
     stats,
     resetDashboardState,
+    isPaused,
   } = useLiveSocket();
+
+  const [isTogglingPause, setIsTogglingPause] = useState(false);
 
   const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
 
@@ -69,6 +72,26 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     }
   };
 
+  // FR-32: chỉ chặn effect MỚI phát sinh -- khác Kill Switch (FR-33), không
+  // xoá effect đang chạy trên Game. isPaused là "nguồn sự thật" đến từ
+  // backend qua socket (xem useLiveSocket.js), nút này chỉ gửi lệnh; UI
+  // tự cập nhật khi RULE_PROGRESS/EFFECT_PAUSE_STATE quay lại, không tự
+  // lạc quan set state ở đây để tránh lệch với trạng thái thật nếu request lỗi.
+  const handleTogglePause = async () => {
+    setIsTogglingPause(true);
+    try {
+      if (isPaused) {
+        await api.resumeEffects();
+      } else {
+        await api.pauseEffects();
+      }
+    } catch (err) {
+      alert(`Lỗi: ${err.message}`);
+    } finally {
+      setIsTogglingPause(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -88,6 +111,27 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               <div>
                 <h1>Live Dashboard</h1>
                 <p className="page-subtitle">Theo dõi tương tác TikTok LIVE và các effect đang kích hoạt.</p>
+              </div>
+
+              {/* NFR-USA-02: nút dừng khẩn cấp phải luôn hiển thị, không cần
+                  cuộn trang -- đưa Kill Switch + Tạm dừng lên header (trước ở
+                  bottom-mock-bar, dễ bị che khi feed dài) và ghim header lại
+                  (.page-header sticky trong App.css) để không phụ thuộc việc
+                  các cột feed có tràn hay không. */}
+              <div className="effect-controls">
+                <span className={`pause-status-badge ${isPaused ? 'pause-status-paused' : 'pause-status-live'}`}>
+                  {isPaused ? '⏸ Effect đang TẠM DỪNG' : '▶ Effect đang phát bình thường'}
+                </span>
+                <button
+                  className={`btn btn-sm ${isPaused ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={handleTogglePause}
+                  disabled={isTogglingPause}
+                >
+                  {isPaused ? '▶ Tiếp tục phát effect' : '⏸ Tạm dừng effect'}
+                </button>
+                <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>
+                  🚨 Kill Switch
+                </button>
               </div>
 
               <div className="room-control">
@@ -232,7 +276,6 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               <button className="btn btn-sm" onClick={() => api.sendMockMemberJoin(viewerCount + 1)}>+ 1 Khán giả Join</button>
               <button className="btn btn-sm" onClick={() => api.sendMockGift('Hoa Hồng', 1, 1, true)}>+ Quà 1💎</button>
               <button className="btn btn-sm" onClick={() => api.sendMockGift('Sư Tử', 1, 1000, true)}>+ Quà Boss 1000💎</button>
-              <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>🚨 Kill Switch</button>
             </footer>
           </>
         )}
