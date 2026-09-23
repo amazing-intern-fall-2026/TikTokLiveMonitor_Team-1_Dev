@@ -336,12 +336,64 @@ select:focus {
   gap: 24px;
   flex-wrap: wrap;
   flex-shrink: 0;
+  /* NFR-USA-02: header (và nút Kill Switch/Tạm dừng bên trong) luôn nằm
+     yên tại chỗ, không trôi theo bất kỳ nội dung nào bên trong .main-area.
+     position:sticky là lớp bảo hiểm thứ 2 -- lớp thứ 1 là .main-area vốn
+     đã overflow:hidden (không tự cuộn trang), chỉ các cột feed bên trong
+     mới cuộn riêng (.col-body). Thêm sticky + nền để header luôn nổi rõ
+     ngay cả khi layout đổi sau này. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-base);
+  padding-top: 4px;
+  margin-top: -4px;
 }
 
 .page-header h1 {
   margin: 0 0 4px;
   font-size: 26px;
   font-weight: 700;
+}
+
+.effect-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pause-status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.pause-status-live {
+  color: var(--tiktok-cyan);
+  background: rgba(37, 244, 238, 0.1);
+  border: 1px solid rgba(37, 244, 238, 0.3);
+}
+
+.pause-status-paused {
+  color: var(--color-gift);
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--color-gift);
+  animation: pause-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pause-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .page-subtitle {
