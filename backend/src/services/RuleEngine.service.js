@@ -359,4 +359,28 @@ function logCommand(command, status, dbSessionId) {
     .catch((err) => logger.error('Failed to log effect command', { error: err.message, commandId: command.commandId }));
 }
 
-module.exports = { init, processEvent, setEffectsPaused, isEffectsPaused };
+/**
+ * NFR-REL-03: called when a /monitor client connects/reconnects, so it can
+ * be sent every active rule's current progress immediately instead of
+ * showing a stale/empty progress bar until the next contributing event.
+ * v1.0 only ever monitors one LIVE room at a time (SRS AS-01, see
+ * envelope.js), so at most one counter entry exists per ruleId -- no
+ * session id is needed to pick the right one.
+ */
+function getProgressSnapshot() {
+  return activeRules.map((rule) => {
+    const key = [...counters.keys()].find((k) => k.startsWith(`${rule.id}:`));
+    const counter = key ? counters.get(key) : { total: 0, totalValue: 0, uniqueUsers: new Set(), cooldownUntil: 0 };
+    const threshold = rule.condition?.threshold || {};
+    return {
+      ruleId: rule.id,
+      ruleName: rule.name,
+      metric: threshold.metric || 'EVENT_COUNT',
+      current: metricValue(rule, counter),
+      target: threshold.value ?? null,
+      onCooldown: Date.now() < counter.cooldownUntil,
+    };
+  });
+}
+
+module.exports = { init, processEvent, getProgressSnapshot, setEffectsPaused, isEffectsPaused };
