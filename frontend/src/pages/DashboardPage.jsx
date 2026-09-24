@@ -108,57 +108,62 @@ export default function DashboardPage({ adminUsername, onLogout }) {
         ) : (
           <>
             <header className="page-header">
-              <div>
+              <div className="page-header-top">
                 <h1>Live Dashboard</h1>
                 <p className="page-subtitle">Theo dõi tương tác TikTok LIVE và các effect đang kích hoạt.</p>
               </div>
 
               {/* NFR-USA-02: nút dừng khẩn cấp phải luôn hiển thị, không cần
-                  cuộn trang -- đưa Kill Switch + Tạm dừng lên header (trước ở
-                  bottom-mock-bar, dễ bị che khi feed dài) và ghim header lại
-                  (.page-header sticky trong App.css) để không phụ thuộc việc
-                  các cột feed có tràn hay không. */}
-              <div className="effect-controls">
-                <span className={`pause-status-badge ${isPaused ? 'pause-status-paused' : 'pause-status-live'}`}>
-                  {isPaused ? '⏸ Effect đang TẠM DỪNG' : '▶ Effect đang phát bình thường'}
-                </span>
-                <button
-                  className={`btn btn-sm ${isPaused ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={handleTogglePause}
-                  disabled={isTogglingPause}
-                >
-                  {isPaused ? '▶ Tiếp tục phát effect' : '⏸ Tạm dừng effect'}
-                </button>
-                <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>
-                  🚨 Kill Switch
-                </button>
-              </div>
-
-              <div className="room-control">
-                <div className="room-input-group">
-                  <span className="prefix">@</span>
-                  <input
-                    type="text"
-                    value={tiktokUsername}
-                    onChange={(e) => setTiktokUsername(e.target.value)}
-                    placeholder="Nhập TikTok username..."
-                    disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
-                  />
-                  {connectionStatus === 'CONNECTED' ? (
-                    <button className="btn btn-outline btn-sm" onClick={handleDisconnect}>
-                      Ngắt kết nối
-                    </button>
-                  ) : (
-                    <button className="btn btn-primary btn-sm" onClick={handleConnectRoom} disabled={isBusyConnecting}>
-                      {connectionStatus === 'CONNECTING' ? 'Đang kết nối...' : 'Kết nối'}
-                    </button>
-                  )}
-                </div>
-                <div className="status-line">
-                  <span className={`status-dot dot-${connectionStatus.toLowerCase()}`} />
-                  <span className="status-text">
-                    {connectionStatus === 'CONNECTED' ? `LIVE Connected @${activeRoom}` : connectionStatus}
+                  cuộn trang -- gộp effect-controls + room-control vào 1
+                  nhóm bên phải để .page-header chỉ có 2 khối con (tiêu đề |
+                  header-actions). Trước đây 3 khối con riêng lẻ + flex-wrap
+                  khiến room-control bị justify-content:space-between đẩy
+                  xuống dòng riêng một mình ngay khi text trạng thái kết nối
+                  dài ra lúc LIVE Connected -- gộp lại để 2 khối cùng wrap
+                  (hoặc không wrap) như một nhóm thay vì tách rời. */}
+              <div className="header-actions">
+                <div className="effect-controls">
+                  <span className={`pause-status-badge ${isPaused ? 'pause-status-paused' : 'pause-status-live'}`}>
+                    {isPaused ? '⏸ Effect đang TẠM DỪNG' : '▶ Effect đang phát bình thường'}
                   </span>
+                  <button
+                    className={`btn btn-sm ${isPaused ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={handleTogglePause}
+                    disabled={isTogglingPause}
+                  >
+                    {isPaused ? '▶ Tiếp tục phát effect' : '⏸ Tạm dừng effect'}
+                  </button>
+                  <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>
+                    🚨 Kill Switch
+                  </button>
+                </div>
+
+                <div className="room-control">
+                  <div className="room-input-group">
+                    <span className="prefix">@</span>
+                    <input
+                      type="text"
+                      value={tiktokUsername}
+                      onChange={(e) => setTiktokUsername(e.target.value)}
+                      placeholder="Nhập TikTok username..."
+                      disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
+                    />
+                    {connectionStatus === 'CONNECTED' ? (
+                      <button className="btn btn-outline btn-sm" onClick={handleDisconnect}>
+                        Ngắt kết nối
+                      </button>
+                    ) : (
+                      <button className="btn btn-primary btn-sm" onClick={handleConnectRoom} disabled={isBusyConnecting}>
+                        {connectionStatus === 'CONNECTING' ? 'Đang kết nối...' : 'Kết nối'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="status-line">
+                    <span className={`status-dot dot-${connectionStatus.toLowerCase()}`} />
+                    <span className="status-text">
+                      {connectionStatus === 'CONNECTED' ? `LIVE Connected @${activeRoom}` : connectionStatus}
+                    </span>
+                  </div>
                 </div>
               </div>
             </header>
