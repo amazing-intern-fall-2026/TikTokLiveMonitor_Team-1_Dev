@@ -31,6 +31,17 @@ const { io } = require('socket.io-client');
 const SERVER_URL = process.argv[2] || 'http://localhost:5000';
 const KEYWORDS = ['heal', 'slow']; // khớp 2 rule đã seed, không đổi tuỳ tiện
 const TRIGGERS_PER_KEYWORD = 5; // = maxTriggersPerSession của mỗi rule
+// QUAN TRỌNG: rule "heal"/"slow" dùng ROLLING window 30s, và fireRule()
+// KHÔNG xoá history khi bắn (chỉ SESSION window mới reset -- xem comment
+// trong RuleEngine.service.js#fireRule). cooldownMs chỉ 10s < window 30s,
+// nên nếu chỉ chờ >10s giữa các burst, 3 comment CŨ của lần bắn trước vẫn
+// còn trong sổ 30 giây -> burst kế tiếp bắn ngay ở comment ĐẦU TIÊN (vì
+// cộng dồn đã đủ ngưỡng), không phải comment thứ 3 như script giả định --
+// làm sai lệch hoàn toàn mốc đo latency (đã verify thực tế: từ burst thứ 2
+// trở đi độ trễ đo được nhảy vọt lên đúng bằng khoảng cách giữa 2 burst).
+// Fix: chờ đủ hết vòng đời ROLLING window (30s) + biên an toàn để history
+// của lần bắn trước xả sạch hoàn toàn trước khi bắt đầu burst kế tiếp.
+const BURST_GAP_MS = 32_000;
 
 const pendingFireTimestamps = []; // các mốc thời gian gửi comment thứ 3 (comment kích hoạt)
 const latencies = [];
@@ -89,10 +100,10 @@ async function main() {
   await new Promise((resolve) => socket.on('connect', resolve));
 
   for (const keyword of KEYWORDS) {
-    console.log(`\n--- Rule "${keyword}" (${TRIGGERS_PER_KEYWORD} lần, cách nhau >10s để qua cooldown) ---`);
+    console.log(`\n--- Rule "${keyword}" (${TRIGGERS_PER_KEYWORD} lần, cách nhau ${BURST_GAP_MS / 1000}s để ROLLING window (30s) xả sạch hoàn toàn) ---`);
     for (let i = 0; i < TRIGGERS_PER_KEYWORD; i++) {
       await fireCommentBurst(keyword);
-      await new Promise((r) => setTimeout(r, 11_000)); // chờ qua cooldownMs=10000 + biên an toàn 1s
+      await new Promise((r) => setTimeout(r, BURST_GAP_MS));
     }
   }
 
