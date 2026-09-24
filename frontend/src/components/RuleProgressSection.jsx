@@ -9,6 +9,20 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:
 // rỗng, tự lấp dần khi RULE_PROGRESS thật gửi tới.
 const DEFAULT_RULES = [];
 
+// Chưa có API liệt kê rule đã cấu hình sẵn (FR-21 CRUD rule chưa code),
+// nên không biết trước có bao nhiêu rule để vẽ khung đúng số lượng thật.
+// Vẽ tạm N khung placeholder ở 0% thay vì để trống hẳn, để Operator biết
+// hệ thống đang chờ sự kiện chứ không phải bị treo/lỗi. Khung này biến mất
+// dần khi rule thật (từ RULE_PROGRESS) lấp đầy -- xem renderedRules bên dưới.
+const PLACEHOLDER_SLOT_COUNT = 3;
+
+// Icon theo nguồn sự kiện trigger rule (SRS mục 6.2 trigger.source).
+const SOURCE_ICON = {
+    COMMENT: '💬',
+    GIFT: '🎁',
+    JOIN: '👤',
+};
+
 export default function RuleProgressSection() {
     const [rules, setRules] = useState(DEFAULT_RULES);
 
@@ -19,9 +33,6 @@ export default function RuleProgressSection() {
         });
 
         socket.on('RULE_PROGRESS', (data) => {
-            // Backend bắn 1 object cho từng rule mỗi lần cập nhật (không phải
-            // mảng cả danh sách) — gộp lại theo ruleId, giữ nguyên các rule
-            // khác chưa có cập nhật mới.
             if (!data || !data.ruleId) return;
             setRules((prev) => {
                 const idx = prev.findIndex((r) => r.ruleId === data.ruleId);
@@ -58,15 +69,34 @@ export default function RuleProgressSection() {
         };
     }, []);
 
+    // Số khung placeholder cần vẽ thêm -- chỉ lấp phần còn thiếu, không vẽ
+    // chồng lên rule thật đã có (vd. đã có 2 rule thật thì chỉ còn 1 placeholder).
+    const placeholderCount = Math.max(0, PLACEHOLDER_SLOT_COUNT - rules.length);
+    const placeholders = Array.from({ length: placeholderCount }, (_, i) => ({
+        ruleId: `placeholder-${i}`,
+        name: 'Đang chờ rule...',
+        source: null,
+        metric: null,
+        current: 0,
+        target: null,
+        percent: 0,
+        cooldownRemainingMs: 0,
+        isPlaceholder: true,
+    }));
+
+    const renderedRules = [...rules, ...placeholders];
+
     return (
+        // Đứng riêng 1 hàng dưới section-heading-row (xem DashboardPage.jsx)
+        // thay vì chen chung với tiêu đề + nút Receiving -- đủ không gian để
+        // các khung to rõ ràng, không bị ép chật như khi còn nằm chung hàng.
         <div
             style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                flexWrap: 'nowrap',
-                overflowX: 'auto',
-                maxWidth: '650px'
+                flexWrap: 'wrap',
+                marginTop: '-8px',
             }}
         >
             <span
@@ -79,18 +109,20 @@ export default function RuleProgressSection() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                 }}
             >
-                ⚡ FR-23:
+                🎯 Tiến độ mục tiêu:
             </span>
 
-            {rules.length === 0 && (
-                <span style={{ fontSize: '11px', color: '#75767a' }}>Chưa có rule nào ghi nhận sự kiện</span>
-            )}
-
-            {rules.map((rule) => {
+            {/* Tự xuống dòng khi màn hình hẹp (flexWrap: 'wrap' ở container
+                cha) thay vì co nhỏ dần hay tràn ngang có scrollbar. Mỗi khung
+                có minWidth cố định để chữ/số liệu luôn đọc được rõ ràng, và
+                flex-grow để lấp hết phần dư khi có chỗ trống. */}
+            {renderedRules.map((rule) => {
                 const isFull = rule.percent >= 100;
+                const icon = SOURCE_ICON[rule.source] || null;
                 return (
                     <div
                         key={rule.ruleId}
@@ -101,8 +133,10 @@ export default function RuleProgressSection() {
                             background: '#161823',
                             border: '1px solid #2f3136',
                             borderRadius: '6px',
-                            padding: '4px 10px',
-                            minWidth: '220px'
+                            padding: '6px 14px',
+                            flex: '1 1 220px',
+                            minWidth: '220px',
+                            opacity: rule.isPlaceholder ? 0.45 : 1,
                         }}
                     >
                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
@@ -117,23 +151,30 @@ export default function RuleProgressSection() {
                             >
                                 <strong
                                     style={{
-                                        color: '#ffffff',
+                                        color: rule.isPlaceholder ? '#75767a' : '#ffffff',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
-                                        maxWidth: '100px'
+                                        minWidth: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
                                     }}
                                     title={rule.name}
                                 >
+                                    {icon && <span>{icon}</span>}
                                     {rule.name}
                                 </strong>
-                                <span style={{ color: '#25f4ee', fontFamily: 'monospace', fontSize: '10px' }}>
-                                    {rule.current}/{rule.target}
-                                    {rule.metric === 'DIAMOND_VALUE' ? '💎' : ''}
+                                <span style={{ color: rule.isPlaceholder ? '#75767a' : '#25f4ee', fontFamily: 'monospace', fontSize: '10px', flexShrink: 0, marginLeft: '6px' }}>
+                                    {rule.isPlaceholder ? '0/0' : (
+                                        <>
+                                            {rule.current}/{rule.target}
+                                            {rule.metric === 'DIAMOND_VALUE' ? '💎' : ''}
+                                        </>
+                                    )}
                                 </span>
                             </div>
 
-                            {/* Mini progress bar */}
                             <div
                                 style={{
                                     width: '100%',
@@ -156,13 +197,13 @@ export default function RuleProgressSection() {
                             </div>
                         </div>
 
-                        {/* Trạng thái phần trăm / Cooldown */}
                         <span
                             style={{
                                 fontSize: '10px',
                                 fontWeight: 600,
                                 color: rule.cooldownRemainingMs > 0 ? '#f59e0b' : isFull ? '#25f4ee' : '#75767a',
-                                whiteSpace: 'nowrap'
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
                             }}
                         >
                             {rule.cooldownRemainingMs > 0

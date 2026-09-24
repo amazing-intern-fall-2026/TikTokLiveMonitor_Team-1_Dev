@@ -331,10 +331,36 @@ select:focus {
 
 .page-header {
   display: flex;
+  /* 1 hàng ngang duy nhất, canh giữa theo chiều dọc (không phải column
+     như bản trước) -- lý do thật sự khiến layout "nhảy" khi connect
+     không phải do row vs column, mà do .room-control tự PHÌNH RỘNG theo
+     độ dài text trạng thái (DISCONNECTED ngắn -> LIVE Connected @user
+     dài). Sửa đúng chỗ: khoá cứng width của .room-control (xem bên dưới)
+     để nó không đổi kích thước dù connect hay không -- nhờ vậy quay lại
+     được layout 1 hàng như mong muốn mà vẫn đứng yên. */
+  flex-direction: row;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
   flex-wrap: wrap;
+  gap: 20px;
+  flex-shrink: 0;
+  /* NFR-USA-02: header (và nút Kill Switch/Tạm dừng bên trong) luôn nằm
+     yên tại chỗ, không trôi theo bất kỳ nội dung nào bên trong .main-area.
+     position:sticky là lớp bảo hiểm thứ 2 -- lớp thứ 1 là .main-area vốn
+     đã overflow:hidden (không tự cuộn trang), chỉ các cột feed bên trong
+     mới cuộn riêng (.col-body). Thêm sticky + nền để header luôn nổi rõ
+     ngay cả khi layout đổi sau này. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-base);
+  padding-top: 4px;
+  margin-top: -4px;
+}
+
+.page-header-top {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 }
 
@@ -342,6 +368,53 @@ select:focus {
   margin: 0 0 4px;
   font-size: 26px;
   font-weight: 700;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.effect-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pause-status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.pause-status-live {
+  color: var(--tiktok-cyan);
+  background: rgba(37, 244, 238, 0.1);
+  border: 1px solid rgba(37, 244, 238, 0.3);
+}
+
+.pause-status-paused {
+  color: var(--color-gift);
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--color-gift);
+  animation: pause-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pause-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .page-subtitle {
@@ -354,11 +427,17 @@ select:focus {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 12px 16px;
+  padding: 10px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 320px;
+  /* width CỐ ĐỊNH (không phải min-width) -- đây mới là nguyên nhân gốc của
+     mọi lần layout "nhảy" khi connect: trước đây box tự phình theo độ dài
+     text trạng thái (DISCONNECTED ngắn -> LIVE Connected @username dài).
+     Giờ box luôn đúng 320px bất kể trạng thái; text dài quá thì bị cắt
+     bằng "..." (xem .status-text) thay vì đẩy rộng cả layout. */
+  width: 320px;
+  flex-shrink: 0;
 }
 
 .room-input-group {
@@ -381,6 +460,8 @@ select:focus {
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  min-width: 0;
+  /* cho phép .status-text bên trong co lại để ellipsis hoạt động */
 }
 
 .status-dot {
@@ -388,6 +469,7 @@ select:focus {
   height: 7px;
   border-radius: 50%;
   background: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .dot-connected {
@@ -406,6 +488,10 @@ select:focus {
 
 .status-text {
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ---------- Metrics ---------- */
@@ -873,4 +959,12 @@ select:focus {
     max-height: none;
     overflow: visible;
   }
+}
+
+.gift-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
 }

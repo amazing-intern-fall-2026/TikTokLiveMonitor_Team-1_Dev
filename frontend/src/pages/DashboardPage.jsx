@@ -23,7 +23,11 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     giftEvents,
     viewerCount,
     stats,
+    resetDashboardState,
+    isPaused,
   } = useLiveSocket();
+
+  const [isTogglingPause, setIsTogglingPause] = useState(false);
 
   const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
 
@@ -37,6 +41,10 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     try {
       setConnectionStatus('CONNECTING');
       await api.connectRoom(cleanUsername);
+      // Vá lỗi chuyển phòng: chủ động đưa feed + metrics về 0 ngay khi đổi
+      // @handle kết nối thành công, không đợi SESSION_RESET từ backend
+      // (backend chưa phát event này) -- xem ghi chú trong useLiveSocket.js.
+      resetDashboardState();
       setActiveRoom(cleanUsername);
       setConnectionStatus('CONNECTED');
     } catch (err) {
@@ -64,6 +72,26 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     }
   };
 
+  // FR-32: chỉ chặn effect MỚI phát sinh -- khác Kill Switch (FR-33), không
+  // xoá effect đang chạy trên Game. isPaused là "nguồn sự thật" đến từ
+  // backend qua socket (xem useLiveSocket.js), nút này chỉ gửi lệnh; UI
+  // tự cập nhật khi RULE_PROGRESS/EFFECT_PAUSE_STATE quay lại, không tự
+  // lạc quan set state ở đây để tránh lệch với trạng thái thật nếu request lỗi.
+  const handleTogglePause = async () => {
+    setIsTogglingPause(true);
+    try {
+      if (isPaused) {
+        await api.resumeEffects();
+      } else {
+        await api.pauseEffects();
+      }
+    } catch (err) {
+      alert(`Lỗi: ${err.message}`);
+    } finally {
+      setIsTogglingPause(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -80,36 +108,62 @@ export default function DashboardPage({ adminUsername, onLogout }) {
         ) : (
           <>
             <header className="page-header">
-              <div>
+              <div className="page-header-top">
                 <h1>Live Dashboard</h1>
                 <p className="page-subtitle">Theo dõi tương tác TikTok LIVE và các effect đang kích hoạt.</p>
               </div>
 
-              <div className="room-control">
-                <div className="room-input-group">
-                  <span className="prefix">@</span>
-                  <input
-                    type="text"
-                    value={tiktokUsername}
-                    onChange={(e) => setTiktokUsername(e.target.value)}
-                    placeholder="Nhập TikTok username..."
-                    disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
-                  />
-                  {connectionStatus === 'CONNECTED' ? (
-                    <button className="btn btn-outline btn-sm" onClick={handleDisconnect}>
-                      Ngắt kết nối
-                    </button>
-                  ) : (
-                    <button className="btn btn-primary btn-sm" onClick={handleConnectRoom} disabled={isBusyConnecting}>
-                      {connectionStatus === 'CONNECTING' ? 'Đang kết nối...' : 'Kết nối'}
-                    </button>
-                  )}
-                </div>
-                <div className="status-line">
-                  <span className={`status-dot dot-${connectionStatus.toLowerCase()}`} />
-                  <span className="status-text">
-                    {connectionStatus === 'CONNECTED' ? `LIVE Connected @${activeRoom}` : connectionStatus}
+              {/* NFR-USA-02: nút dừng khẩn cấp phải luôn hiển thị, không cần
+                  cuộn trang -- gộp effect-controls + room-control vào 1
+                  nhóm bên phải để .page-header chỉ có 2 khối con (tiêu đề |
+                  header-actions). Trước đây 3 khối con riêng lẻ + flex-wrap
+                  khiến room-control bị justify-content:space-between đẩy
+                  xuống dòng riêng một mình ngay khi text trạng thái kết nối
+                  dài ra lúc LIVE Connected -- gộp lại để 2 khối cùng wrap
+                  (hoặc không wrap) như một nhóm thay vì tách rời. */}
+              <div className="header-actions">
+                <div className="effect-controls">
+                  <span className={`pause-status-badge ${isPaused ? 'pause-status-paused' : 'pause-status-live'}`}>
+                    {isPaused ? '⏸ Effect đang TẠM DỪNG' : '▶ Effect đang phát bình thường'}
                   </span>
+                  <button
+                    className={`btn btn-sm ${isPaused ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={handleTogglePause}
+                    disabled={isTogglingPause}
+                  >
+                    {isPaused ? '▶ Tiếp tục phát effect' : '⏸ Tạm dừng effect'}
+                  </button>
+                  <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>
+                    🚨 Kill Switch
+                  </button>
+                </div>
+
+                <div className="room-control">
+                  <div className="room-input-group">
+                    <span className="prefix">@</span>
+                    <input
+                      type="text"
+                      value={tiktokUsername}
+                      onChange={(e) => setTiktokUsername(e.target.value)}
+                      placeholder="Nhập TikTok username..."
+                      disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
+                    />
+                    {connectionStatus === 'CONNECTED' ? (
+                      <button className="btn btn-outline btn-sm" onClick={handleDisconnect}>
+                        Ngắt kết nối
+                      </button>
+                    ) : (
+                      <button className="btn btn-primary btn-sm" onClick={handleConnectRoom} disabled={isBusyConnecting}>
+                        {connectionStatus === 'CONNECTING' ? 'Đang kết nối...' : 'Kết nối'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="status-line">
+                    <span className={`status-dot dot-${connectionStatus.toLowerCase()}`} />
+                    <span className="status-text">
+                      {connectionStatus === 'CONNECTED' ? `LIVE Connected @${activeRoom}` : connectionStatus}
+                    </span>
+                  </div>
                 </div>
               </div>
             </header>
@@ -179,6 +233,19 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                           <strong className="row-user">{e.user}</strong>
                         </div>
                         <div className="gift-row-bot">
+                          {/* Render Icon Quà: giftImageUrl là optional (BR-DATA-01) --
+                              chưa có ảnh (backend chưa gửi / lỗi tải) thì ẩn hẳn <img>
+                              thay vì hiện icon vỡ, feed vẫn hiển thị đủ tên + số lượng. */}
+                          {e.giftImageUrl && (
+                            <img
+                              src={e.giftImageUrl}
+                              alt={e.giftName || 'Quà tặng'}
+                              className="gift-icon"
+                              width={20}
+                              height={20}
+                              onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
+                            />
+                          )}
                           <span className="gift-tag">{e.repeatCount}x {e.giftName}</span>
                           <span className="diamond-tag">+{e.diamonds} 💎</span>
                           {!e.isFinished && <span className="streak-tag">Combo...</span>}
@@ -214,7 +281,6 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               <button className="btn btn-sm" onClick={() => api.sendMockMemberJoin(viewerCount + 1)}>+ 1 Khán giả Join</button>
               <button className="btn btn-sm" onClick={() => api.sendMockGift('Hoa Hồng', 1, 1, true)}>+ Quà 1💎</button>
               <button className="btn btn-sm" onClick={() => api.sendMockGift('Sư Tử', 1, 1000, true)}>+ Quà Boss 1000💎</button>
-              <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>🚨 Kill Switch</button>
             </footer>
           </>
         )}
