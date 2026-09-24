@@ -86,7 +86,12 @@ function connectToLiveStream(uniqueId) {
   const existingConnection = activeConnections.get(uniqueId);
   if (existingConnection) {
     activeUniqueId = uniqueId;
-    return Promise.resolve(existingConnection.state);
+    const existingContext = connectionContexts.get(uniqueId);
+    return Promise.resolve({
+      ...existingConnection.state,
+      avatarUrl: existingContext?.avatarUrl ?? null,
+      liveStartedAt: existingContext?.liveStartedAt ?? null,
+    });
   }
 
   const connection = new TikTokLiveConnection(uniqueId, {
@@ -117,6 +122,15 @@ function connectToLiveStream(uniqueId) {
     reconnectAttempts: 0,
     reconnectTimer: null,
     manualDisconnect: false,
+    // FR-09: cached from state.roomInfo once connect() resolves.
+    avatarUrl: null,
+    liveStartedAt: null,
+    // FR-08: set true by the WebcastEvent.STREAM_END handler when TikTok
+    // reports the host actually ended (or got suspended from) the broadcast.
+    // STREAM_END always fires before/alongside ControlEvent.DISCONNECTED for
+    // a real end, so the DISCONNECTED handler checks this flag to tell that
+    // apart from a plain network drop.
+    streamEndedByHost: false,
   };
   connectionContexts.set(uniqueId, context);
   context.joinBroadcastTimer = setInterval(
@@ -137,6 +151,31 @@ function connectToLiveStream(uniqueId) {
         context.connectedAt = Date.now();
       }
 
+      // FR-09: roomInfo is already fetched by fetchRoomInfoOnConnect (the
+      // library's default) and cached on state.roomInfo -- no extra request
+      // needed. Its exact shape isn't in the library's types (typed as
+      // Record<string, any>), so extractRoomProfile() tries the known TikTok
+      // webcast field names defensively and this logs the raw owner object
+      // once to confirm them, same approach as the BR-GF-01 GIFT debug log.
+      const { avatarUrl, liveStartedAt } = extractRoomProfile(state.roomInfo);
+      logger.debug('FR-09: raw roomInfo owner', {
+        uniqueId,
+        hasRoomInfo: Boolean(state.roomInfo),
+        owner: state.roomInfo?.owner,
+        createTime: state.roomInfo?.create_time,
+      });
+      if (context) {
+        context.avatarUrl = avatarUrl;
+        context.liveStartedAt = liveStartedAt;
+      }
+      broadcastEvent('ROOM_INFO', {
+        roomId: String(state.roomId ?? uniqueId),
+        uniqueId,
+        avatarUrl,
+        liveStartedAt: liveStartedAt ? liveStartedAt.toISOString() : null,
+      });
+      broadcastEvent('ROOM_STATUS', { roomId: String(state.roomId ?? uniqueId), uniqueId, status: 'LIVE' });
+
       // Best-effort: persistence must never block or break the live relay,
       // so a DB outage here only means events won't be saved, not that the
       // connection fails.
@@ -147,11 +186,14 @@ function connectToLiveStream(uniqueId) {
           context.liveStreamId = liveStream.id;
           context.sessionId = session.id;
         }
+        if (avatarUrl || liveStartedAt) {
+          await liveStreamRepository.updateProfile(liveStream.id, { avatarUrl, liveStartedAt });
+        }
       } catch (err) {
         logger.error('Failed to open a DB session (events will not be persisted)', { uniqueId, error: err.message });
       }
 
-      return state;
+      return { ...state, avatarUrl, liveStartedAt };
     })
     .catch((err) => {
       logger.error('Failed to connect', { uniqueId, error: err.message });
@@ -178,9 +220,47 @@ function registerEventHandlers(connection, uniqueId) {
     if (!context || context.manualDisconnect) {
       return;
     }
-    // FR-06: an unrequested drop -- retry with backoff instead of tearing
-    // the session down immediately (see scheduleReconnect()).
+
+    // FR-08: STREAM_END is TikTok's dedicated "the host ended (or was
+    // suspended from) the broadcast" event, and per the connector's docs it
+    // always fires before/alongside this DISCONNECTED -- so if it already
+    // landed, this is a real end, not a network blip. There's nothing to
+    // reconnect to (the room is gone), so close the session as 'ended'
+    // instead of scheduling an FR-06 reconnect.
+    if (context.streamEndedByHost) {
+      logger.info('FR-08: LIVE ended by host, closing session as ended', { uniqueId });
+      broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'ENDED' });
+      closeSession(uniqueId, 'ended');
+      stopJoinBroadcastTimer(uniqueId);
+      activeConnections.delete(uniqueId);
+      connectionContexts.delete(uniqueId);
+      if (activeUniqueId === uniqueId) {
+        activeUniqueId = null;
+      }
+      return;
+    }
+
+    // FR-06: an unrequested drop with no preceding STREAM_END -- a genuine
+    // temporary network loss, not the host ending the stream. Retry with
+    // backoff instead of tearing the session down immediately (see
+    // scheduleReconnect()).
+    broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'RECONNECTING' });
     scheduleReconnect(uniqueId, connection);
+  });
+
+  // FR-08: dedicated "host ended the LIVE" event -- distinct from a dropped
+  // WebSocket. Only flags the connection; the actual session-closing
+  // decision happens in the ControlEvent.DISCONNECTED handler above, which
+  // this always precedes (per the connector's docs).
+  connection.on(WebcastEvent.STREAM_END, (data) => {
+    const context = connectionContexts.get(uniqueId);
+    if (context) {
+      context.streamEndedByHost = true;
+    }
+    logger.info('FR-08: TikTok STREAM_END received (host ended or was suspended)', {
+      uniqueId,
+      action: data?.action,
+    });
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
@@ -236,6 +316,13 @@ function registerEventHandlers(connection, uniqueId) {
     const unitDiamondValue = data.gift?.diamondCount ?? 0;
     const repeatCount = data.repeatCount ?? 1;
     const totalDiamondValue = unitDiamondValue * repeatCount;
+    // BR-GF-01: per the connector's docs only streakable gifts (gift.combo)
+    // send an intermediate repeatEnd=0 followed by a closing repeatEnd=1; a
+    // non-streakable gift is final as-is and may still carry repeatEnd=0.
+    // Mapping Boolean(repeatEnd) alone (the previous behaviour) marked those
+    // gifts as "streak in progress", so RuleEngine dropped them forever.
+    const isStreakable = Boolean(data.gift?.combo);
+    const isStreakFinished = !isStreakable || Boolean(data.repeatEnd);
     const envelope = wrapEnvelope({
       type: 'GIFT',
       roomId: String(getRoomId(uniqueId)),
@@ -243,12 +330,14 @@ function registerEventHandlers(connection, uniqueId) {
       payload: {
         giftId: data.giftId ?? data.gift?.id,
         giftName: data.gift?.name ?? 'Unknown Gift',
-        giftImageUrl: data.giftDetails?.giftImage?.image_url,
+        // proto v3 (what the connector uses) exposes the icon on gift.image;
+        // giftDetails.giftImage.image_url (old v1/v2 shape) is kept as fallback.
+        giftImageUrl: data.gift?.image?.urlList?.[0] ?? data.giftDetails?.giftImage?.image_url,
         unitDiamondValue,
         repeatCount,
         totalDiamondValue,
-        isStreakable: Boolean(data.gift?.combo),
-        isStreakFinished: Boolean(data.repeatEnd),
+        isStreakable,
+        isStreakFinished,
         giftTier: getGiftTier(totalDiamondValue),
       },
       sourceTimestamp: extractSourceTimestamp(data),
@@ -406,6 +495,7 @@ function scheduleReconnect(uniqueId, connection) {
           // WebSocket handshake -- restart the BR-JN-04 backlog window.
           reconnectedContext.connectedAt = Date.now();
         }
+        broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'LIVE' });
       })
       .catch((err) => {
         logger.error('FR-06: reconnect attempt failed', { uniqueId, attempt: attemptNumber, error: err.message });
@@ -420,6 +510,7 @@ function scheduleReconnect(uniqueId, connection) {
  */
 function giveUpReconnecting(uniqueId) {
   logger.error('FR-06: reconnect attempts exhausted, giving up', { uniqueId, maxAttempts: RECONNECT_MAX_ATTEMPTS });
+  broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'DISCONNECTED' });
   closeSession(uniqueId, 'disconnected');
   stopJoinBroadcastTimer(uniqueId);
   activeConnections.delete(uniqueId);
@@ -455,6 +546,37 @@ function extractUser(rawUser) {
     uniqueId: user.uniqueId ?? user.displayId ?? 'unknown',
     nickname: user.nickname ?? 'TikTok User',
   };
+}
+
+/**
+ * FR-09: pulls the streamer's avatar URL and the LIVE's actual start time
+ * out of tiktok-live-connector's roomInfo (cached on state.roomInfo /
+ * connection.roomInfo). The library types roomInfo as Record<string, any>
+ * -- no fixed shape -- so this tries the field names TikTok's webcast API is
+ * documented to use (avatar_thumb/_medium/_large, each an image object with
+ * url_list) across both snake_case (raw protobuf JSON) and camelCase (some
+ * connector versions normalize field names) rather than assuming one.
+ * roomInfo.create_time is a Unix seconds timestamp per the library's README.
+ */
+function extractRoomProfile(roomInfo) {
+  if (!roomInfo) {
+    return { avatarUrl: null, liveStartedAt: null };
+  }
+
+  const owner = roomInfo.owner ?? {};
+  const avatarUrl =
+    owner.avatar_thumb?.url_list?.[0] ??
+    owner.avatarThumb?.urlList?.[0] ??
+    owner.avatar_medium?.url_list?.[0] ??
+    owner.avatarMedium?.urlList?.[0] ??
+    owner.avatar_large?.url_list?.[0] ??
+    owner.avatarLarge?.urlList?.[0] ??
+    null;
+
+  const createTimeRaw = roomInfo.create_time ?? roomInfo.createTime;
+  const liveStartedAt = createTimeRaw ? new Date(Number(createTimeRaw) * 1000) : null;
+
+  return { avatarUrl, liveStartedAt };
 }
 
 function extractSourceTimestamp(data) {

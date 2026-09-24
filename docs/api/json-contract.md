@@ -124,6 +124,14 @@ Phát khi có người xem tặng quà (bao gồm combo quà đang được gộ
 | `isStreakFinished` | boolean | `true` khi combo đã kết thúc — **Game chỉ nên trigger hiệu ứng khi `isStreakFinished === true`** |
 | `giftTier` | string enum | `SMALL` (≤99 kim cương) \| `MEDIUM` (≤499) \| `LARGE` (≤1999) \| `EPIC` (>1999) — ngưỡng đọc động từ `backend/src/config/giftTiers.json`, chỉnh sửa không cần deploy lại (BR-GF-04) |
 
+> **Giới hạn nền tảng — độ trễ chốt combo (BR-GF-01):** với quà combo
+> (`isStreakable: true`), TikTok chỉ gửi event `isStreakFinished: true` sau
+> khi người tặng ngừng bấm vài giây; trong lúc đó chỉ có các event trung gian
+> (`isStreakFinished: false`, `repeatCount` tăng dần). Đây là hành vi của
+> TikTok, **không phải lỗi backend** — không thể rút ngắn ở phía ta. Quà
+> **không** combo được backend coi là chốt ngay (`isStreakFinished: true`)
+> dù TikTok gửi `repeatEnd = 0`.
+
 **Gợi ý cho Game:** map `giftId`/`giftTier` sang loại hiệu ứng (buff/debuff) theo bảng cấu hình riêng; dùng `totalDiamondValue` để tính độ mạnh hiệu ứng.
 
 ---

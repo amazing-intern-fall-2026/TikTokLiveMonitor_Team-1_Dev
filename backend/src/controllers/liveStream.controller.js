@@ -40,7 +40,15 @@ async function connect(req, res) {
 
   try {
     const state = await liveStreamService.connectToLiveStream(cleanUsername);
-    res.json({ username: cleanUsername, roomId: state.roomId });
+    // FR-09: avatarUrl/liveStartedAt (null if TikTok's roomInfo didn't carry
+    // them) so the dashboard can render the streamer's profile immediately,
+    // without waiting on the ROOM_INFO socket broadcast.
+    res.json({
+      username: cleanUsername,
+      roomId: state.roomId,
+      avatarUrl: state.avatarUrl ?? null,
+      liveStartedAt: state.liveStartedAt ? state.liveStartedAt.toISOString() : null,
+    });
   } catch (err) {
     const { status, message } = mapConnectError(cleanUsername, err);
     res.status(status).json({ message });

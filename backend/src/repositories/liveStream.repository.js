@@ -40,4 +40,17 @@ function updateViewerCount(id, viewerCount) {
   return db.query('UPDATE live_streams SET viewer_count = $2 WHERE id = $1', [id, viewerCount]);
 }
 
-module.exports = { findAll, findById, create, findOrCreateByHostUsername, updateViewerCount };
+/**
+ * FR-09: persists the streamer's avatar URL and the TikTok-reported LIVE
+ * start time once known (see liveStream.service.js's roomInfo extraction).
+ * Both are best-effort/nullable -- only the fields actually resolved are
+ * written, so a partial extraction never clobbers a previously known value.
+ */
+function updateProfile(id, { avatarUrl, liveStartedAt } = {}) {
+  return db.query(
+    'UPDATE live_streams SET avatar_url = COALESCE($2, avatar_url), live_started_at = COALESCE($3, live_started_at) WHERE id = $1',
+    [id, avatarUrl ?? null, liveStartedAt ?? null]
+  );
+}
+
+module.exports = { findAll, findById, create, findOrCreateByHostUsername, updateViewerCount, updateProfile };

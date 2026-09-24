@@ -7,6 +7,7 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:
 const MAX_FEED_ITEMS = 200; // NFR-PERF-05 & FR-13: Chống tràn bộ nhớ DOM
 
 const EMPTY_STATS = { comments: 0, diamonds: 0, totalGifts: 0, joins: 0 };
+const EMPTY_ROOM_INFO = { avatarUrl: null, liveStartedAt: null };
 
 // Helper phân giải tên khán giả chuẩn Envelope Contract (Mục 4.2 SRS)
 function resolveUserName(data, fallback = 'Khán giả') {
@@ -33,6 +34,15 @@ export function useLiveSocket() {
     // mọi dashboard đang mở (nhiều Operator/tab) thấy đúng cùng 1 trạng thái.
     const [isPaused, setIsPaused] = useState(false);
 
+    // FR-09: streamer avatar + TikTok-reported LIVE start time, from the
+    // backend's ROOM_INFO broadcast (see liveStream.service.js).
+    const [roomInfo, setRoomInfo] = useState(EMPTY_ROOM_INFO);
+    // FR-08: the TikTok room's own state -- LIVE | RECONNECTING | ENDED |
+    // DISCONNECTED, from the backend's ROOM_STATUS broadcast. Distinct from
+    // connectionStatus above, which is only about our own Socket.IO link to
+    // the backend, not whether the TikTok LIVE itself is still going.
+    const [roomStatus, setRoomStatus] = useState(null);
+
     const socketRef = useRef(null);
 
     // Vá lỗi chuyển phòng: gọi ngay sau khi đổi @handle kết nối thành công,
@@ -46,6 +56,8 @@ export function useLiveSocket() {
         setGiftEvents([]);
         setViewerCount(0);
         setStats(EMPTY_STATS);
+        setRoomInfo(EMPTY_ROOM_INFO);
+        setRoomStatus(null);
     }, []);
 
     useEffect(() => {
@@ -92,6 +104,25 @@ export function useLiveSocket() {
                 // Best-effort: nếu backend chưa có route này (chưa deploy phần
                 // FR-32), giữ nguyên mặc định isPaused=false, không chặn UI.
             });
+
+        // FR-09: streamer avatar + LIVE start time, sent once right after a
+        // successful connect (also available synchronously from the
+        // /connect REST response -- see api.connectRoom -- this listener
+        // covers the reconnect case, where only the socket broadcasts it).
+        socket.on('ROOM_INFO', (data) => {
+            setRoomInfo({
+                avatarUrl: data.avatarUrl ?? null,
+                liveStartedAt: data.liveStartedAt ?? null,
+            });
+        });
+
+        // FR-08: LIVE | RECONNECTING | ENDED | DISCONNECTED -- lets the
+        // dashboard tell "TikTok LIVE thực sự đã kết thúc" apart from
+        // "mất mạng tạm thời, đang thử kết nối lại" instead of treating
+        // every drop the same way.
+        socket.on('ROOM_STATUS', (data) => {
+            if (data?.status) setRoomStatus(data.status);
+        });
 
         // 1. CHAT (SRS 4.3)
         socket.on('CHAT', (data) => {
@@ -169,6 +200,10 @@ export function useLiveSocket() {
         giftEvents,
         viewerCount,
         stats,
+        roomInfo,
+        setRoomInfo,
+        roomStatus,
+        setRoomStatus,
         resetDashboardState,
         isPaused,
     };
