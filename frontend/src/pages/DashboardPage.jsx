@@ -8,6 +8,16 @@ import { useLiveSocket } from '../hooks/useLiveSocket';
 import Sidebar from '../components/Sidebar';
 import RulesPage from './RulesPage';
 import RuleProgressSection from '../components/RuleProgressSection';
+import VirtualList from '../components/VirtualList';
+
+// Ảo hoá 3 cột feed (windowing) -- các hằng số này PHẢI khớp
+// height + margin-bottom của .chat-row/.gift-row/.join-row trong App.css
+// (xem comment ở đó). Cap 200 item/cột đã xử lý sẵn ở MAX_FEED_ITEMS
+// trong useLiveSocket.js -- không đụng tới, đây chỉ là chiều cao 1 dòng
+// dùng để tính toán viewport, không phải giới hạn số lượng.
+const CHAT_ROW_HEIGHT = 64 + 8;
+const GIFT_ROW_HEIGHT = 70 + 8;
+const JOIN_ROW_HEIGHT = 36 + 8;
 
 export default function DashboardPage({ adminUsername, onLogout }) {
   const [activeNav, setActiveNav] = useState('dashboard');
@@ -205,72 +215,72 @@ export default function DashboardPage({ adminUsername, onLogout }) {
             <main className="columns-grid">
               <div className="column-card">
                 <div className="col-header"><h3>Bình luận ({chatEvents.length})</h3></div>
-                <div className="col-body">
-                  {chatEvents.length === 0 ? (
-                    <div className="empty-state">Chưa có bình luận mới</div>
-                  ) : (
-                    chatEvents.map((e) => (
-                      <div key={e.id} className="feed-row chat-row">
-                        <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                        <strong className="row-user">{e.user}:</strong>
-                        <span className="row-text">{e.text}</span>
-                      </div>
-                    ))
+                <VirtualList
+                  className="col-body"
+                  items={chatEvents}
+                  itemHeight={CHAT_ROW_HEIGHT}
+                  emptyState={<div className="empty-state">Chưa có bình luận mới</div>}
+                  renderItem={(e) => (
+                    <div key={e.id} className="feed-row chat-row">
+                      <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                      <strong className="row-user">{e.user}:</strong>
+                      <span className="row-text">{e.text}</span>
+                    </div>
                   )}
-                </div>
+                />
               </div>
 
               <div className="column-card">
                 <div className="col-header"><h3>Quà tặng ({giftEvents.length})</h3></div>
-                <div className="col-body">
-                  {giftEvents.length === 0 ? (
-                    <div className="empty-state">Chưa có quà tặng</div>
-                  ) : (
-                    giftEvents.map((e) => (
-                      <div key={e.id} className={`feed-row gift-row ${e.diamonds >= 100 ? 'gift-large' : ''}`}>
-                        <div className="gift-row-top">
-                          <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                          <strong className="row-user">{e.user}</strong>
-                        </div>
-                        <div className="gift-row-bot">
-                          {/* Render Icon Quà: giftImageUrl là optional (BR-DATA-01) --
-                              chưa có ảnh (backend chưa gửi / lỗi tải) thì ẩn hẳn <img>
-                              thay vì hiện icon vỡ, feed vẫn hiển thị đủ tên + số lượng. */}
-                          {e.giftImageUrl && (
-                            <img
-                              src={e.giftImageUrl}
-                              alt={e.giftName || 'Quà tặng'}
-                              className="gift-icon"
-                              width={20}
-                              height={20}
-                              onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
-                            />
-                          )}
-                          <span className="gift-tag">{e.repeatCount}x {e.giftName}</span>
-                          <span className="diamond-tag">+{e.diamonds} 💎</span>
-                          {!e.isFinished && <span className="streak-tag">Combo...</span>}
-                        </div>
+                <VirtualList
+                  className="col-body"
+                  items={giftEvents}
+                  itemHeight={GIFT_ROW_HEIGHT}
+                  emptyState={<div className="empty-state">Chưa có quà tặng</div>}
+                  renderItem={(e) => (
+                    <div key={e.id} className={`feed-row gift-row ${e.diamonds >= 100 ? 'gift-large' : ''}`}>
+                      <div className="gift-row-top">
+                        <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                        <strong className="row-user">{e.user}</strong>
                       </div>
-                    ))
+                      <div className="gift-row-bot">
+                        {/* Render Icon Quà: giftImageUrl là optional (BR-DATA-01) --
+                            chưa có ảnh (backend chưa gửi / lỗi tải) thì ẩn hẳn <img>
+                            thay vì hiện icon vỡ, feed vẫn hiển thị đủ tên + số lượng. */}
+                        {e.giftImageUrl && (
+                          <img
+                            src={e.giftImageUrl}
+                            alt={e.giftName || 'Quà tặng'}
+                            className="gift-icon"
+                            width={20}
+                            height={20}
+                            onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        <span className="gift-tag">{e.repeatCount}x {e.giftName}</span>
+                        <span className="diamond-tag">+{e.diamonds} 💎</span>
+                        {!e.isFinished && <span className="streak-tag">Combo...</span>}
+                      </div>
+                    </div>
                   )}
-                </div>
+                />
               </div>
 
               <div className="column-card">
                 <div className="col-header"><h3>Hoạt động ({joinEvents.length})</h3></div>
-                <div className="col-body">
-                  {joinEvents.length === 0 ? (
-                    <div className="empty-state">Chưa có khán giả mới</div>
-                  ) : (
-                    joinEvents.map((e) => (
-                      <div key={e.id} className="feed-row join-row">
-                        <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                        <span className="row-user">{e.user}</span>
-                        <span className="row-muted">đã vào phòng</span>
-                      </div>
-                    ))
+                <VirtualList
+                  className="col-body"
+                  items={joinEvents}
+                  itemHeight={JOIN_ROW_HEIGHT}
+                  emptyState={<div className="empty-state">Chưa có khán giả mới</div>}
+                  renderItem={(e) => (
+                    <div key={e.id} className="feed-row join-row">
+                      <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                      <span className="row-user">{e.user}</span>
+                      <span className="row-muted">đã vào phòng</span>
+                    </div>
                   )}
-                </div>
+                />
               </div>
             </main>
 

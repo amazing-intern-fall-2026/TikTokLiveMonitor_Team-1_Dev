@@ -577,10 +577,15 @@ select:focus {
 .col-body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   overflow-y: auto;
+  /* KHÔNG còn display:flex/gap ở đây -- lúc trước dùng flex column + gap
+     để tự dàn các .feed-row, nhưng ảo hoá (VirtualList.jsx) cần tính
+     chiều cao TỔNG bằng phép nhân đơn giản (items.length * itemHeight)
+     để đặt 2 spacer div đúng vị trí. gap của flexbox sẽ cộng thêm
+     khoảng cách ngoài dự tính của phép nhân đó, làm lệch toàn bộ danh
+     sách khi cuộn. Khoảng cách giữa các dòng giờ chuyển qua
+     margin-bottom trên chính .feed-row (xem bên dưới) -- gộp thẳng vào
+     itemHeight nên luôn khớp. */
 }
 
 .feed-row {
@@ -588,32 +593,58 @@ select:focus {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 13px;
+  /* Ảo hoá yêu cầu MỖI ROW CAO CỐ ĐỊNH (xem VirtualList.jsx) -- box-sizing
+     border-box để padding không cộng thêm ngoài chiều cao đã khai báo ở
+     .chat-row/.gift-row/.join-row, và overflow:hidden để nội dung dài
+     (comment dài, tên quà dài) bị cắt gọn thay vì đẩy vỡ chiều cao. Các
+     hằng số CHAT_ROW_HEIGHT/GIFT_ROW_HEIGHT/JOIN_ROW_HEIGHT trong
+     DashboardPage.jsx PHẢI khớp height + margin-bottom ở đây -- đổi 1 chỗ
+     mà quên chỗ kia sẽ làm virtual list lệch vị trí render. */
+  box-sizing: border-box;
+  overflow: hidden;
+  margin-bottom: 8px;
 }
 
 .chat-row {
+  height: 64px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-content: flex-start;
+  gap: 4px 6px;
   align-items: baseline;
 }
 
 .join-row {
+  height: 36px;
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
+  overflow: hidden;
 }
 
 .row-time {
   color: var(--text-muted);
   font-size: 11px;
+  flex-shrink: 0;
 }
 
 .row-user {
   color: #e5e5e5;
+  flex-shrink: 0;
 }
 
 .row-text {
   color: #c7c7c7;
+  line-height: 1.35;
+  /* Bình luận dài trước đây làm .chat-row cao tuỳ ý (chiều cao theo nội
+     dung) -- giờ ép luôn xuống dòng riêng (flex-basis 100%) và giới hạn
+     tối đa 2 dòng bằng line-clamp, thừa thì "..." thay vì đẩy vỡ chiều
+     cao cố định 64px của .chat-row. */
+  flex: 1 1 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .row-muted {
@@ -623,6 +654,7 @@ select:focus {
 .gift-row-top {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 4px;
 }
 
@@ -630,23 +662,40 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  /* Không cho wrap xuống dòng nữa (khác trước) -- .gift-row giờ cao cố
+     định, gift-tag dài bất thường sẽ tự cắt "..." (xem .gift-tag) thay
+     vì xuống dòng làm tràn khỏi khung. */
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .gift-tag {
   font-size: 12px;
   color: #c7c7c7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .diamond-tag {
   font-size: 12px;
   font-weight: 700;
   color: var(--color-gift);
+  flex-shrink: 0;
 }
 
 .streak-tag {
   font-size: 11px;
   color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.gift-row {
+  height: 70px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .gift-large {
