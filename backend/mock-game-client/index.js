@@ -8,12 +8,20 @@
 // cutscene) and rejecting an otherwise-valid command with status
 // REJECTED -- see REJECT_PROBABILITY below to tune or disable this.
 //
-// Usage: node mock-game-client.js [serverUrl]  (default http://localhost:5000)
+// Usage: node index.js [serverUrl]  (default http://localhost:5000)
+//        GAME_TOKEN=<jwt> node index.js   (gửi kèm nếu backend đã bật xác
+//        thực /game theo docs/api/game-token-spec.md -- xem README.md,
+//        mục "Về xác thực token", TÍNH ĐẾN 25/09/2026 backend CHƯA bắt
+//        buộc token này, gửi hay không gửi đều connect được).
 
 const { io } = require('socket.io-client');
 
 const SERVER_URL = process.argv[2] || 'http://localhost:5000';
-const socket = io(`${SERVER_URL}/game`, { transports: ['websocket'] });
+const GAME_TOKEN = process.env.GAME_TOKEN || undefined;
+const socket = io(`${SERVER_URL}/game`, {
+  transports: ['websocket'],
+  auth: GAME_TOKEN ? { token: GAME_TOKEN } : undefined,
+});
 
 // Giả lập nhân vật đôi lúc đang chết/cutscene, không nhận hiệu ứng được.
 // REJECTED khác EXPIRED: EXPIRED là lỗi thời gian (lệnh đến trễ), REJECTED
@@ -58,6 +66,13 @@ socket.on('connect', () => {
 
 socket.on('disconnect', (reason) => {
   console.log(`[mock-game-client] disconnected: ${reason}`);
+});
+
+// Xem docs/api/game-token-spec.md mục 4 -- khi backend bật xác thực,
+// handshake bị từ chối sẽ báo lỗi ở đây (MISSING_TOKEN / WRONG_ROLE /
+// INVALID_OR_EXPIRED_TOKEN) thay vì bắn 'connect'.
+socket.on('connect_error', (err) => {
+  console.error(`[mock-game-client] connect_error: ${err.message}`);
 });
 
 socket.on('EFFECT_COMMAND', (command) => handleCommand('EFFECT_COMMAND', command));
