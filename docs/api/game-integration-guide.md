@@ -117,12 +117,23 @@ gắn với rule nào (xem bảng `effect_commands.rule_id` — cột này nulla
 nhận được lệnh trùng khít với `issuedAt` (chênh lệch dưới 1 mili-giây) —
 tốc độ phát lệnh khẩn cấp không phải điểm nghẽn.
 
-> **Giới hạn hiện tại, team Game cần biết:** AC-08 đầy đủ còn yêu cầu
-> "không effect mới nào được phát cho tới khi Operator bật lại" — cơ chế
-> tạm dừng (pause state) này **chưa được xây ở backend**. Sau khi
-> `CLEAR_ALL_EFFECTS` được phát, nếu Rule Engine tiếp tục tích đủ ngưỡng
-> một rule khác, lệnh `EFFECT_COMMAND` mới vẫn sẽ được gửi bình thường.
-> Đây là việc còn tồn đọng (thuộc FR-32), không phải bug.
+> **CHỐT (24/09/2026) — AC-08 đã đầy đủ, không còn giới hạn:** phần
+> "không effect mới nào được phát cho tới khi Operator bật lại" nay đã có
+> cơ chế tạm dừng (`PAUSE_EFFECTS`, FR-32) ở backend —
+> `RuleEngine.service.js#setEffectsPaused()`/`evaluateThreshold()`. Khi
+> Operator bấm "Tạm dừng" (`POST /api/effects/pause`), mọi rule dù đạt đủ
+> ngưỡng cũng **không** enqueue `EFFECT_COMMAND` mới (dữ liệu/feed vẫn thu
+> thập và hiển thị bình thường, chỉ effect bị chặn). Bấm "Tiếp tục"
+> (`POST /api/effects/resume`) thì rule đang "đứng ở ngưỡng" từ lúc pause
+> sẽ bắn ngay ở sự kiện hợp lệ tiếp theo, không cần tích luỹ lại từ đầu.
+> Cả 2 endpoint đều phát `EFFECT_PAUSE_STATE` trên `/monitor` để dashboard
+> đồng bộ trạng thái ngay lập tức. Đã verify bằng
+> `backend/test-ac08-kill-switch-pause.js` — 8/8 assertion pass, bao gồm cả
+> độ trễ Kill Switch (đo thật ~40-100ms, luôn dưới 1s) lẫn việc pause chặn
+> effect mới triệt để. Quy trình chuẩn cho Game team: **Kill Switch xoá
+> effect đang chạy ngay lập tức** (mục này), **Pause chặn effect mới phát
+> sinh** (không tự động kèm theo kill switch — Operator cần chủ động bấm
+> cả 2 nếu muốn "dừng hẳn" toàn bộ).
 
 ---
 
@@ -240,6 +251,6 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 ## 6. Việc còn mở (cần chốt thêm)
 
 - [ ] Danh mục `effectCode` chính thức + tham số mỗi effect (magnitude/duration hợp lệ) — chờ Dev Game xác nhận (OQ-01, `open-questions-devgame.md`)
-- [ ] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — hiện chưa chặn effect mới phát sinh sau khi kill switch
+- [x] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — **đã xong (24/09/2026)**: `POST /api/effects/pause` / `/resume` + `EFFECT_PAUSE_STATE` broadcast, verify bằng `backend/test-ac08-kill-switch-pause.js` (8/8 pass). Xem mục 3.
 - [ ] Token phiên cho kênh `/game` (NFR-SEC-02) — hiện chưa yêu cầu xác thực khi connect
 - [ ] Ví dụ C# đã bổ sung (16/09) nhưng CHƯA test thật với backend như bản JavaScript — cần Game team tự verify khi tích hợp, hoặc team Backend test lại bằng 1 client C# mẫu trước khi coi là "đã kiểm chứng"
