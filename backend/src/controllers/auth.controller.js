@@ -1,6 +1,13 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { adminUsername, adminPassword, jwtSecret, jwtExpiresIn } = require('../config/env');
+const {
+  adminUsername,
+  adminPassword,
+  jwtSecret,
+  jwtExpiresIn,
+  gameClientSecret,
+  gameTokenExpiresIn,
+} = require('../config/env');
 const { makeLogger } = require('../utils/logger');
 
 const logger = makeLogger('auth');
@@ -45,4 +52,35 @@ async function login(req, res) {
   res.json({ token, tokenType: 'Bearer', expiresIn: jwtExpiresIn });
 }
 
-module.exports = { login };
+/**
+ * NFR-SEC-02: machine-to-machine token for the Game Client to connect to the
+ * /game Socket.io namespace, per docs/api/game-token-spec.md. Shared secret
+ * (GAME_CLIENT_SECRET), not username/password -- there is one Game Client
+ * credential, same spirit as the operator login. Reuses JWT_SECRET to sign
+ * (only the `role` claim differs from the operator token) so socket.handler.js
+ * can verify both with a single key.
+ */
+async function gameToken(req, res) {
+  if (!gameClientSecret || !jwtSecret) {
+    logger.error('Game token issuance is not configured (GAME_CLIENT_SECRET/JWT_SECRET missing from env)');
+    return res.status(500).json({ message: 'Server chưa cấu hình xác thực Game Client' });
+  }
+
+  const { clientSecret } = req.body || {};
+  if (!clientSecret) {
+    return res.status(400).json({ message: 'Thiếu clientSecret' });
+  }
+
+  if (!safeEqual(clientSecret, gameClientSecret)) {
+    logger.warn('Failed game-token request (invalid clientSecret)');
+    return res.status(401).json({ message: 'Sai client secret' });
+  }
+
+  const token = jwt.sign({ sub: 'game-client', role: 'game_client' }, jwtSecret, {
+    expiresIn: gameTokenExpiresIn,
+  });
+  logger.info('Game token issued');
+  res.json({ token, tokenType: 'Bearer', expiresIn: gameTokenExpiresIn });
+}
+
+module.exports = { login, gameToken };

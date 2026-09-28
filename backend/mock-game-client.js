@@ -8,12 +8,25 @@
 // cutscene) and rejecting an otherwise-valid command with status
 // REJECTED -- see REJECT_PROBABILITY below to tune or disable this.
 //
-// Usage: node mock-game-client.js [serverUrl]  (default http://localhost:5000)
+// Usage: GAME_TOKEN=<jwt from POST /api/auth/game-token> node mock-game-client.js [serverUrl]
+// (default http://localhost:5000). NFR-SEC-02: /game now rejects the
+// handshake without a valid game_client token -- see
+// docs/api/game-token-spec.md.
 
 const { io } = require('socket.io-client');
 
 const SERVER_URL = process.argv[2] || 'http://localhost:5000';
-const socket = io(`${SERVER_URL}/game`, { transports: ['websocket'] });
+const GAME_TOKEN = process.env.GAME_TOKEN || '';
+
+if (!GAME_TOKEN) {
+  console.warn('[mock-game-client] GAME_TOKEN env var not set -- handshake will be rejected (MISSING_TOKEN). ' +
+    'Get one via POST /api/auth/game-token with your GAME_CLIENT_SECRET.');
+}
+
+const socket = io(`${SERVER_URL}/game`, {
+  transports: ['websocket'],
+  auth: { token: GAME_TOKEN },
+});
 
 // Giả lập nhân vật đôi lúc đang chết/cutscene, không nhận hiệu ứng được.
 // REJECTED khác EXPIRED: EXPIRED là lỗi thời gian (lệnh đến trễ), REJECTED
@@ -58,6 +71,10 @@ socket.on('connect', () => {
 
 socket.on('disconnect', (reason) => {
   console.log(`[mock-game-client] disconnected: ${reason}`);
+});
+
+socket.on('connect_error', (err) => {
+  console.error(`[mock-game-client] connection rejected: ${err.message}`);
 });
 
 socket.on('EFFECT_COMMAND', (command) => handleCommand('EFFECT_COMMAND', command));
