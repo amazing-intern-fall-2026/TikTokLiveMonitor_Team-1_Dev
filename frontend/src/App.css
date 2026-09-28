@@ -553,6 +553,47 @@ select:focus {
   gap: 16px;
 }
 
+/* FR-15: thanh tab lọc feed + chế độ 1 cột khi chọn 1 loại. */
+.feed-tabs {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.feed-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feed-tab:hover {
+  color: var(--text-main);
+}
+
+.feed-tab-active {
+  color: var(--text-main);
+  border-color: var(--tiktok-cyan);
+  background: rgba(37, 244, 238, 0.1);
+}
+
+.feed-tab-count {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.columns-grid-single {
+  grid-template-columns: 1fr;
+}
+
 .column-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);

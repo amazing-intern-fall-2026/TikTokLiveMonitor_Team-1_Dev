@@ -1,13 +1,48 @@
 // frontend/src/services/api.js
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
+// Khoá lưu JWT của Operator trong localStorage -- dùng chung với App.jsx
+// (App import hằng này, không tự khai báo lại) để 2 nơi không bao giờ lệch tên.
+export const TOKEN_KEY = 'jwt_token';
+
+// api.js là module thuần, không phải component React nên không tự đổi được
+// màn hình. App.jsx đăng ký handleLogout qua hàm này; khi nhận 401 request()
+// sẽ gọi lại handler đó để đưa người dùng về màn Login.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+
+function readToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 async function request(endpoint, options = {}) {
-  const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const token = readToken();
+  // Gộp header thay vì để ...options ghi đè cả object headers.
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+  const res = await fetch(`${BACKEND_URL}${endpoint}`, { ...options, headers });
+
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
+    // 401 + đã gửi token = token hết hạn/sai -> tự logout. Không kích hoạt khi
+    // request không mang token (chưa đăng nhập), tránh vòng lặp vô nghĩa.
+    if (res.status === 401 && token) {
+      try {
+        localStorage.removeItem(TOKEN_KEY);
+      } catch {
+        /* localStorage không khả dụng -> vẫn tiếp tục logout ở state */
+      }
+      if (unauthorizedHandler) unauthorizedHandler();
+    }
     throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
   }
   return res.json();

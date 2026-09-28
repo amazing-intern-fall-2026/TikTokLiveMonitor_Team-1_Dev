@@ -19,11 +19,22 @@ const CHAT_ROW_HEIGHT = 64 + 8;
 const GIFT_ROW_HEIGHT = 70 + 8;
 const JOIN_ROW_HEIGHT = 36 + 8;
 
+// FR-15: bộ lọc feed theo loại sự kiện. 'ALL' giữ nguyên bố cục 3 cột như
+// trước; chọn 1 tab thì chỉ hiện đúng cột đó (rộng full) -- chỉ lọc hiển thị,
+// dữ liệu/đếm trong useLiveSocket.js không bị đụng tới.
+const FEED_TABS = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'COMMENT', label: '💬 Bình luận' },
+  { key: 'GIFT', label: '🎁 Quà tặng' },
+  { key: 'JOIN', label: '👤 Hoạt động' },
+];
+
 export default function DashboardPage({ adminUsername, onLogout }) {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [tiktokUsername, setTiktokUsername] = useState('');
   const [activeRoom, setActiveRoom] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [feedTab, setFeedTab] = useState('ALL');
 
   const {
     connectionStatus,
@@ -38,6 +49,11 @@ export default function DashboardPage({ adminUsername, onLogout }) {
   } = useLiveSocket();
 
   const [isTogglingPause, setIsTogglingPause] = useState(false);
+
+  const feedCounts = { COMMENT: chatEvents.length, GIFT: giftEvents.length, JOIN: joinEvents.length };
+  const showComment = feedTab === 'ALL' || feedTab === 'COMMENT';
+  const showGift = feedTab === 'ALL' || feedTab === 'GIFT';
+  const showJoin = feedTab === 'ALL' || feedTab === 'JOIN';
 
   const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
 
@@ -212,7 +228,24 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               <span className="receiving-pill">● Receiving</span>
             </div>
 
-            <main className="columns-grid">
+            <div className="feed-tabs" role="tablist" aria-label="Lọc feed theo loại sự kiện">
+              {FEED_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={feedTab === tab.key}
+                  className={`feed-tab ${feedTab === tab.key ? 'feed-tab-active' : ''}`}
+                  onClick={() => setFeedTab(tab.key)}
+                >
+                  {tab.label}
+                  {tab.key !== 'ALL' && <span className="feed-tab-count">{feedCounts[tab.key]}</span>}
+                </button>
+              ))}
+            </div>
+
+            <main className={`columns-grid ${feedTab === 'ALL' ? '' : 'columns-grid-single'}`}>
+              {showComment && (
               <div className="column-card">
                 <div className="col-header"><h3>Bình luận ({chatEvents.length})</h3></div>
                 <VirtualList
@@ -229,7 +262,9 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   )}
                 />
               </div>
+              )}
 
+              {showGift && (
               <div className="column-card">
                 <div className="col-header"><h3>Quà tặng ({giftEvents.length})</h3></div>
                 <VirtualList
@@ -265,7 +300,9 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   )}
                 />
               </div>
+              )}
 
+              {showJoin && (
               <div className="column-card">
                 <div className="col-header"><h3>Hoạt động ({joinEvents.length})</h3></div>
                 <VirtualList
@@ -282,6 +319,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   )}
                 />
               </div>
+              )}
             </main>
 
             <footer className="bottom-mock-bar">
