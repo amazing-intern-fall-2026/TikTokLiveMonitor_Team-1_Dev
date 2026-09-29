@@ -87,6 +87,54 @@ export const api = {
   // đợi lần EFFECT_PAUSE_STATE broadcast kế tiếp mới biết đang pause hay không.
   getEffectStatus: () => request('/api/effects/status'),
 
+  // 2c. FR-38: Lịch sử phiên -- danh sách phiên ĐÃ ĐÓNG, phân trang.
+  getSessions: ({ page = 1, pageSize = 20, room, dateFrom, dateTo } = {}) => {
+    const params = new URLSearchParams({ page, pageSize });
+    if (room) params.set('room', room);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    return request(`/api/sessions?${params.toString()}`);
+  },
+
+  // FR-37: tải báo cáo phiên dạng CSV. KHÔNG dùng request() ở trên vì response
+  // là file nhị phân (Content-Type: text/csv), không phải JSON -- fetch thủ
+  // công, tự đính Bearer token (giống request()), rồi ép trình duyệt lưu file
+  // qua 1 thẻ <a> tạm (window.open/<a href> thường sẽ KHÔNG gửi được header
+  // Authorization, nên không dùng được cho route đã yêu cầu xác thực).
+  downloadSessionCsv: async (sessionId) => {
+    const token = (() => {
+      try {
+        return localStorage.getItem(TOKEN_KEY);
+      } catch {
+        return null;
+      }
+    })();
+    const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/export?format=csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      if (res.status === 401 && token) {
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+        } catch {
+          /* localStorage không khả dụng -- vẫn tiếp tục logout ở state */
+        }
+        if (unauthorizedHandler) unauthorizedHandler();
+      }
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `session-${sessionId}-report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
   // 3. Mock Test Suite khớp chính xác với testEvent.routes.js của Thiên Tài (FR-31)
   sendMockChat: (comment = 'GO', username = 'tester_vn', nickname = 'Khán Giả Test') =>
     request('/api/test-events/chat', {

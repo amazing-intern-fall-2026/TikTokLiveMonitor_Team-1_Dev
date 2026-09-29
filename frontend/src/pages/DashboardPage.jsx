@@ -9,6 +9,7 @@ import Sidebar from '../components/Sidebar';
 import RulesPage from './RulesPage';
 import RuleProgressSection from '../components/RuleProgressSection';
 import VirtualList from '../components/VirtualList';
+import SessionHistoryModal from '../components/SessionHistoryModal';
 
 // Ảo hoá 3 cột feed (windowing) -- các hằng số này PHẢI khớp
 // height + margin-bottom của .chat-row/.gift-row/.join-row trong App.css
@@ -49,6 +50,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
   } = useLiveSocket();
 
   const [isTogglingPause, setIsTogglingPause] = useState(false);
+  const [showSessionHistory, setShowSessionHistory] = useState(false);
 
   const feedCounts = { COMMENT: chatEvents.length, GIFT: giftEvents.length, JOIN: joinEvents.length };
   const showComment = feedTab === 'ALL' || feedTab === 'COMMENT';
@@ -161,6 +163,9 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   </button>
                   <button className="btn btn-sm btn-danger-outline" onClick={handleKillSwitch}>
                     🚨 Kill Switch
+                  </button>
+                  <button className="btn btn-sm btn-outline" onClick={() => setShowSessionHistory(true)}>
+                    🗂 Lịch sử phiên
                   </button>
                 </div>
 
@@ -333,6 +338,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
           </>
         )}
       </div>
+      {showSessionHistory && <SessionHistoryModal onClose={() => setShowSessionHistory(false)} />}
     </div>
   );
 }
