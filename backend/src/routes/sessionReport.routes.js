@@ -3,6 +3,7 @@ const sessionReportController = require('../controllers/sessionReport.controller
 
 const router = Router();
 
+router.get('/', sessionReportController.listSessions);
 router.get('/:sessionId/report', sessionReportController.getBySessionId);
 router.get('/:sessionId/export', sessionReportController.exportBySessionId);
 

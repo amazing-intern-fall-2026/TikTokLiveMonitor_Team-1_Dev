@@ -1,16 +1,16 @@
 // frontend/src/App.jsx
 // Chỉ giữ vai trò điều phối: quyết định hiển thị page nào, không chứa
 // markup/logic riêng của từng page — mọi page đều tự quản lý chính nó.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import { TOKEN_KEY, setUnauthorizedHandler } from './services/api';
 
 // Không dùng react-router-dom (xem ghi chú trong main.jsx) nên "bảo vệ
 // route" ở đây nghĩa là: quyết định màn hình khởi tạo dựa trên jwt_token
 // đã lưu, thay vì chuyển hướng URL. Có token hợp lệ -> vào thẳng
 // Dashboard; không có/hết hạn -> ở lại Login.
-const TOKEN_KEY = 'jwt_token';
 
 function readStoredUsername() {
   try {
@@ -49,6 +49,13 @@ export default function App() {
     setAdminUsername('');
     setCurrentScreen('LOGIN');
   };
+
+  // Backend trả 401 (token hết hạn/không hợp lệ) -> api.js gọi handler này
+  // để tự động về màn Login. Gỡ handler khi App unmount.
+  useEffect(() => {
+    setUnauthorizedHandler(handleLogout);
+    return () => setUnauthorizedHandler(null);
+  });
 
   if (currentScreen === 'LOGIN') {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;

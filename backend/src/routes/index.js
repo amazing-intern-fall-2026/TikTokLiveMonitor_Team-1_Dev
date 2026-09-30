@@ -15,4 +15,6 @@ router.use('/effects', effectRoutes);
 router.use('/sessions', sessionReportRoutes);
 router.use('/login', authRoutes);
 
+router.use('/rules', require('./rule.routes'));
+
 module.exports = router;
