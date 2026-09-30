@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const { broadcastGameCommand } = require('../sockets/socket.service');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const liveStreamService = require('../services/liveStream.service');
@@ -20,7 +20,9 @@ async function killSwitch(req, res) {
     issuedAt: new Date().toISOString(),
   };
 
+  ruleEngine.setEffectsPaused(true);
   broadcastGameCommand('CLEAR_ALL_EFFECTS', payload);
+  ruleEngine.setEffectsPaused(true);
 
   effectCommandRepository
     .create({ sessionId: liveStreamService.getCurrentSessionId(), payload, status: 'SENT' })

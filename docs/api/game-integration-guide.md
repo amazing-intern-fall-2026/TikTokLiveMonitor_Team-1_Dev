@@ -14,31 +14,124 @@ test thật với implementation mẫu đó, không phải code lý thuyết.
 
 ---
 
-## 1. Kết nối
+## 1. Kết nối & Xác thực (Authentication)
 
-- Giao thức: Socket.io v4 (WebSocket), namespace path `/game`
-- Server: `http://<backend-host>:5000/game`
-- Không cần xác thực ở v1.0 (chưa có token phiên — xem mục 6)
+Theo tiêu chuẩn an toàn NFR-SEC-02, Game Client phải xác thực trước khi kết nối vào namespace `/game`.
 
-### JavaScript (Node.js / browser — dùng `socket.io-client`)
+### 1.1. Luồng cấp phát Token phiên (Session Token)
+
+```
+Game Client                  Backend REST API                Socket.io (/game)
+    |                               |                                |
+    |-- 1. POST /api/game/token --->|                                |
+    |      (clientKey, roomId)      |                                |
+    |<-- 2. Token JWT (TTL 4h) -----|                                |
+    |                                                                |
+    |-- 3. Connect ws://.../game (auth: { token }) ----------------->|
+    |<-- 4. Handshake OK (connect event) ----------------------------|
+```
+
+#### Chi tiết Endpoint lấy Token:
+- **Phương thức:** `POST`
+- **Đường dẫn:** `/api/game/token`
+- **Headers:** `Content-Type: application/json`
+- **Request Body:**
+```json
+{
+  "clientKey": "<GAME_CLIENT_KEY>",
+  "roomId": "streamer_01",
+  "engineVersion": "Unity_2022.3"
+}
+```
+- **Response thành công (HTTP 200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 14400,
+    "namespace": "/game",
+    "allowedActions": ["BUFF", "DEBUFF", "CLEAR_ALL"]
+  }
+}
+```
+- **Mã lỗi:**
+  - `401 Unauthorized`: `clientKey` không hợp lệ hoặc đã bị thu hồi.
+  - `404 Not Found`: Phiên livestream cho `roomId` chưa được khởi tạo.
+
+---
+
+### 1.2. Kết nối Socket.io với Token
+
+Sau khi lấy token thành công, Game Client truyền token vào payload `auth` khi khởi tạo kết nối Socket.io v4:
+
+- **Giao thức:** Socket.io v4 (WebSocket), namespace path `/game`
+- **Server:** `http://<backend-host>:5000/game`
+
+#### JavaScript (Node.js / browser — dùng `socket.io-client`)
 
 ```js
 const { io } = require('socket.io-client');
-const socket = io('http://localhost:5000/game', { transports: ['websocket'] });
 
-socket.on('connect', () => {
-  console.log('Connected to /game as', socket.id);
-});
+async function connectGameClient() {
+  // 1. Gọi REST API lấy token phiên
+  const res = await fetch('http://localhost:5000/api/game/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      clientKey: process.env.GAME_CLIENT_KEY || 'dev_secret_key',
+      roomId: 'streamer_01'
+    }),
+  });
+  const { data } = await res.json();
+  const sessionToken = data.token;
+
+  // 2. Mở kết nối Socket.io với auth token
+  const socket = io('http://localhost:5000/game', {
+    transports: ['websocket'],
+    auth: { token: sessionToken },
+    reconnection: true,
+    reconnectionAttempts: 5,
+  });
+
+  socket.on('connect', () => {
+    console.log('Connected to /game as', socket.id);
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error('Lỗi xác thực /game:', err.message);
+  });
+
+  return socket;
+}
 ```
 
-### C# (.NET — dùng thư viện `SocketIOClient`)
+#### C# (.NET — dùng thư viện `SocketIOClient`)
 
 Cài package: `dotnet add package SocketIOClient`
 
 ```csharp
+using System;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading.Tasks;
 using SocketIOClient;
 
-var socket = new SocketIOClient.SocketIO("http://localhost:5000/game");
+// 1. Lấy token phiên từ REST API
+using var httpClient = new HttpClient();
+var tokenRes = await httpClient.PostAsJsonAsync("http://localhost:5000/api/game/token", new {
+    clientKey = "dev_secret_key",
+    roomId = "streamer_01"
+});
+var tokenPayload = await tokenRes.Content.ReadFromJsonAsync<GameTokenResponse>();
+
+// 2. Mở kết nối WebSocket với token xác thực
+var socket = new SocketIOClient.SocketIO("http://localhost:5000/game", new SocketIOOptions
+{
+    Auth = new { token = tokenPayload.Data.Token },
+    Transport = SocketIOClient.Transport.TransportProtocol.WebSocket
+});
 
 socket.OnConnected += (sender, e) =>
 {
@@ -48,8 +141,7 @@ socket.OnConnected += (sender, e) =>
 await socket.ConnectAsync();
 ```
 
-Implementation mẫu đầy đủ, đã chạy thật với backend (không phải code lý
-thuyết): `backend/mock-game-client.js`.
+Implementation mẫu đầy đủ: `backend/mock-game-client.js`.
 
 ---
 
@@ -252,5 +344,5 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 
 - [ ] Danh mục `effectCode` chính thức + tham số mỗi effect (magnitude/duration hợp lệ) — chờ Dev Game xác nhận (OQ-01, `open-questions-devgame.md`)
 - [x] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — **đã xong (24/09/2026)**: `POST /api/effects/pause` / `/resume` + `EFFECT_PAUSE_STATE` broadcast, verify bằng `backend/test-ac08-kill-switch-pause.js` (8/8 pass). Xem mục 3.
-- [ ] Token phiên cho kênh `/game` (NFR-SEC-02) — hiện chưa yêu cầu xác thực khi connect
+- [x] Token phiên cho kênh `/game` (NFR-SEC-02) — đã đặc tả luồng POST /api/game/token và auth handshake (Mục 1)
 - [ ] Ví dụ C# đã bổ sung (16/09) nhưng CHƯA test thật với backend như bản JavaScript — cần Game team tự verify khi tích hợp, hoặc team Backend test lại bằng 1 client C# mẫu trước khi coi là "đã kiểm chứng"

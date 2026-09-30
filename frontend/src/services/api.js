@@ -172,4 +172,20 @@ export const api = {
         createTime: Date.now(),
       }),
     }),
+
+  // 3. Quản lý Rules (FR-21, FR-22)
+  getRules: () => request('/api/rules').then((res) => res.data),
+  createRule: (ruleData) =>
+    request('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify(ruleData),
+    }).then((res) => res.data),
+  toggleRule: (ruleId) =>
+    request(`/api/rules/${ruleId}/toggle`, {
+      method: 'PATCH',
+    }).then((res) => res.data),
+  deleteRule: (ruleId) =>
+    request(`/api/rules/${ruleId}`, {
+      method: 'DELETE',
+    }).then((res) => res.data),
 };
