@@ -1,0 +1,14 @@
+{
+  "name": "mock-game-client",
+  "version": "1.0.0",
+  "description": "Standalone mock Game Client for TikTok Live Monitor -- simulates a real game receiving EFFECT_COMMAND / CLEAR_ALL_EFFECTS over Socket.io and acking back.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

@@ -22,4 +22,6 @@ router.use('/sessions', sessionReportRoutes);
 router.use('/rules', ruleRoutes);
 router.use('/auth', authRoutes);
 
+router.use('/rules', require('./rule.routes'));
+
 module.exports = router;

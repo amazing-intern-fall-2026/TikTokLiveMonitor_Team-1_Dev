@@ -7,7 +7,9 @@ const router = Router();
 // NFR-SEC-01: session reports are operator-facing data.
 router.use(requireAuth);
 
-router.get('/', sessionReportController.list);
+router.get('/', sessionReportController.listSessions);
+// FR-38 (host/liveStreamId/from/to filters, { data, page, limit, total }).
+router.get('/search', sessionReportController.list);
 router.get('/:sessionId/report', sessionReportController.getBySessionId);
 router.get('/:sessionId/export', sessionReportController.exportBySessionId);
 

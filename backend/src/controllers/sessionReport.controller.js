@@ -1,6 +1,25 @@
 const sessionRepository = require('../repositories/session.repository');
 const sessionReportRepository = require('../repositories/sessionReport.repository');
 
+/** FR-38: liệt kê các phiên ĐÃ ĐÓNG (đã có report), phân trang, phục vụ modal "Lịch sử phiên". Phiên đang chạy (disconnected_at NULL) không xuất hiện -- chưa có gì để xem/tải. */
+async function listSessions(req, res) {
+  const page = req.query.page === undefined ? 1 : Number.parseInt(req.query.page, 10);
+  const pageSize = req.query.pageSize === undefined ? 20 : Number.parseInt(req.query.pageSize, 10);
+  if (!Number.isInteger(page) || !Number.isInteger(pageSize) || page < 1 || pageSize < 1) {
+    return res.status(400).json({ message: 'page và pageSize phải là số nguyên dương' });
+  }
+
+  const { room, dateFrom, dateTo } = req.query;
+  const result = await sessionReportRepository.listClosedSessions({ page, pageSize, room, dateFrom, dateTo });
+  res.json({
+    sessions: result.sessions,
+    page: result.page,
+    pageSize: result.pageSize,
+    total: result.total,
+    totalPages: Math.max(1, Math.ceil(result.total / result.pageSize)),
+  });
+}
+
 /** FR-38: re-read a session's summary report (generated once, at disconnect -- see sessionReport.service.js). */
 async function getBySessionId(req, res) {
   const report = await sessionReportRepository.findBySessionId(req.params.sessionId);
@@ -99,4 +118,4 @@ async function list(req, res) {
 }
 
 
-module.exports = { getBySessionId, exportBySessionId, list };
+module.exports = { listSessions, getBySessionId, exportBySessionId, list };

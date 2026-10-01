@@ -1,40 +1,70 @@
 // frontend/src/services/api.js
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
-const TOKEN_KEY = 'jwt_token';
+// Khoá lưu JWT của Operator trong localStorage -- dùng chung với App.jsx
+// (App import hằng này, không tự khai báo lại) để 2 nơi không bao giờ lệch tên.
+export const TOKEN_KEY = 'jwt_token';
 
-// NFR-SEC-01: the operator-facing routes (livestream connect/disconnect,
-// effects kill-switch/pause/resume, ...) now sit behind requireAuth, so every
-// call must carry the JWT that LoginPage stored under TOKEN_KEY.
-function authHeaders() {
+// api.js là module thuần, không phải component React nên không tự đổi được
+// màn hình. App.jsx đăng ký handleLogout qua hàm này; khi nhận 401 request()
+// sẽ gọi lại handler đó để đưa người dùng về màn Login.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+
+function readToken() {
   try {
-    const token = localStorage.getItem(TOKEN_KEY);
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return localStorage.getItem(TOKEN_KEY);
   } catch {
-    return {};
+    return null;
   }
 }
 
 async function request(endpoint, options = {}) {
-  const { headers, ...rest } = options;
-  const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-    ...rest,
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...headers },
-  });
-  if (res.status === 401) {
-    // Token missing/expired/invalid: drop it and reload so App.jsx falls back
-    // to the Login screen instead of leaving a dashboard that can't do anything.
-    try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
-    window.location.reload();
-  }
+  const token = readToken();
+  // Gộp header thay vì để ...options ghi đè cả object headers.
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+  const res = await fetch(`${BACKEND_URL}${endpoint}`, { ...options, headers });
+
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
+    // 401 + đã gửi token = token hết hạn/sai -> tự logout. Không kích hoạt khi
+    // request không mang token (chưa đăng nhập), tránh vòng lặp vô nghĩa.
+    if (res.status === 401 && token) {
+      try {
+        localStorage.removeItem(TOKEN_KEY);
+      } catch {
+        /* localStorage không khả dụng -> vẫn tiếp tục logout ở state */
+      }
+      if (unauthorizedHandler) unauthorizedHandler();
+    }
     throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
   }
   return res.json();
 }
 
 export const api = {
+
+// Đăng nhập thật, lấy JWT từ POST /api/login. Không qua request() vì lỗi
+  // 401 ở ĐÂY nghĩa là "sai mật khẩu" (hiển thị trong form), khác hẳn 401 ở
+  // mọi chỗ khác (nghĩa là "phiên hết hạn, về Login").
+  login: async (username, password) => {
+    const res = await fetch(`${BACKEND_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Đăng nhập thất bại');
+    }
+    return data; // { token, tokenType, expiresIn }
+  },
   // 1. Quản lý phòng Live (FR-01 -> FR-08)
   connectRoom: (username) =>
     request('/api/livestream/connect', {
@@ -73,6 +103,54 @@ export const api = {
   // đợi lần EFFECT_PAUSE_STATE broadcast kế tiếp mới biết đang pause hay không.
   getEffectStatus: () => request('/api/effects/status'),
 
+  // 2c. FR-38: Lịch sử phiên -- danh sách phiên ĐÃ ĐÓNG, phân trang.
+  getSessions: ({ page = 1, pageSize = 20, room, dateFrom, dateTo } = {}) => {
+    const params = new URLSearchParams({ page, pageSize });
+    if (room) params.set('room', room);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    return request(`/api/sessions?${params.toString()}`);
+  },
+
+  // FR-37: tải báo cáo phiên dạng CSV. KHÔNG dùng request() ở trên vì response
+  // là file nhị phân (Content-Type: text/csv), không phải JSON -- fetch thủ
+  // công, tự đính Bearer token (giống request()), rồi ép trình duyệt lưu file
+  // qua 1 thẻ <a> tạm (window.open/<a href> thường sẽ KHÔNG gửi được header
+  // Authorization, nên không dùng được cho route đã yêu cầu xác thực).
+  downloadSessionCsv: async (sessionId) => {
+    const token = (() => {
+      try {
+        return localStorage.getItem(TOKEN_KEY);
+      } catch {
+        return null;
+      }
+    })();
+    const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/export?format=csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      if (res.status === 401 && token) {
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+        } catch {
+          /* localStorage không khả dụng -- vẫn tiếp tục logout ở state */
+        }
+        if (unauthorizedHandler) unauthorizedHandler();
+      }
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `session-${sessionId}-report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
   // 3. Mock Test Suite khớp chính xác với testEvent.routes.js của Thiên Tài (FR-31)
   sendMockChat: (comment = 'GO', username = 'tester_vn', nickname = 'Khán Giả Test') =>
     request('/api/test-events/chat', {
@@ -110,4 +188,20 @@ export const api = {
         createTime: Date.now(),
       }),
     }),
+
+  // 3. Quản lý Rules (FR-21, FR-22)
+  getRules: () => request('/api/rules').then((res) => res.data),
+  createRule: (ruleData) =>
+    request('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify(ruleData),
+    }).then((res) => res.data),
+  toggleRule: (ruleId) =>
+    request(`/api/rules/${ruleId}/toggle`, {
+      method: 'PATCH',
+    }).then((res) => res.data),
+  deleteRule: (ruleId) =>
+    request(`/api/rules/${ruleId}`, {
+      method: 'DELETE',
+    }).then((res) => res.data),
 };

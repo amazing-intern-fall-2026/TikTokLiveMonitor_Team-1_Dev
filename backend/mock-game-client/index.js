@@ -8,9 +8,9 @@
 // cutscene) and rejecting an otherwise-valid command with status
 // REJECTED -- see REJECT_PROBABILITY below to tune or disable this.
 //
-// Usage: GAME_TOKEN=<jwt from POST /api/auth/game-token> node mock-game-client.js [serverUrl]
-// (default http://localhost:5000). NFR-SEC-02: /game now rejects the
-// handshake without a valid game_client token -- see
+// Usage: GAME_TOKEN=<jwt from POST /api/auth/game-token> node index.js
+// [serverUrl] (default http://localhost:5000). NFR-SEC-02: /game now
+// rejects the handshake without a valid game_client token -- see
 // docs/api/game-token-spec.md.
 
 const { io } = require('socket.io-client');
@@ -73,6 +73,9 @@ socket.on('disconnect', (reason) => {
   console.log(`[mock-game-client] disconnected: ${reason}`);
 });
 
+// Xem docs/api/game-token-spec.md mục 4 -- handshake bị từ chối sẽ báo
+// lỗi ở đây (MISSING_TOKEN / WRONG_ROLE / INVALID_OR_EXPIRED_TOKEN)
+// thay vì bắn 'connect'.
 socket.on('connect_error', (err) => {
   console.error(`[mock-game-client] connection rejected: ${err.message}`);
 });

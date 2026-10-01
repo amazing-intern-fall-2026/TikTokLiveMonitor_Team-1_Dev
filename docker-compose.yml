@@ -46,6 +46,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
       - GAME_CLIENT_SECRET=${GAME_CLIENT_SECRET:?GAME_CLIENT_SECRET must be set}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
       # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
       - LOG_LEVEL=info
     depends_on:
