@@ -2,7 +2,7 @@ const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-liv
 const { eulerApiKey } = require('../config/env');
 const liveStreamRepository = require('../repositories/liveStream.repository');
 const sessionRepository = require('../repositories/session.repository');
-const { broadcastEvent } = require('../sockets/socket.service');
+const { broadcastEvent, publishLiveStatus } = require('../sockets/socket.service');
 const { wrapEnvelope } = require('../utils/envelope');
 const { normalizeText } = require('../utils/text');
 const { getGiftTier } = require('../utils/giftTier');
@@ -151,6 +151,9 @@ function connectToLiveStream(uniqueId) {
         logger.error('Failed to open a DB session (events will not be persisted)', { uniqueId, error: err.message });
       }
 
+      if (context && !context.manualDisconnect && connectionContexts.get(uniqueId) === context) {
+        publishLiveStatus('CONNECTED', uniqueId);
+      }
       return state;
     })
     .catch((err) => {
@@ -161,11 +164,21 @@ function connectToLiveStream(uniqueId) {
       if (activeUniqueId === uniqueId) {
         activeUniqueId = null;
       }
+      publishLiveStatus('ERROR', uniqueId, 'Không thể kết nối phòng LIVE');
       throw err;
     });
 }
 
 function registerEventHandlers(connection, uniqueId) {
+  connection.on(WebcastEvent.STREAM_END, () => {
+    const context = connectionContexts.get(uniqueId);
+    if (!context || context.manualDisconnect) return;
+    // Set the flag synchronously so the ensuing DISCONNECTED cannot retry.
+    publishLiveStatus('ENDED', uniqueId);
+    disconnectFromLiveStream(uniqueId, true).catch((err) => {
+      logger.error('Failed to close ended LIVE', { uniqueId, error: err.message });
+    });
+  });
   connection.on(ControlEvent.CONNECTED, (state) => {
     logger.info('Connector established', { uniqueId, roomId: state.roomId });
   });
@@ -375,7 +388,7 @@ function calcReconnectDelay(attempt) {
  */
 function scheduleReconnect(uniqueId, connection) {
   const context = connectionContexts.get(uniqueId);
-  if (!context) {
+  if (!context || context.manualDisconnect || context.reconnectTimer) {
     return;
   }
 
@@ -384,6 +397,7 @@ function scheduleReconnect(uniqueId, connection) {
     return;
   }
 
+  publishLiveStatus('RECONNECTING', uniqueId);
   const delay = calcReconnectDelay(context.reconnectAttempts);
   context.reconnectAttempts += 1;
   const attemptNumber = context.reconnectAttempts;
@@ -395,12 +409,14 @@ function scheduleReconnect(uniqueId, connection) {
   });
 
   context.reconnectTimer = setTimeout(() => {
+    context.reconnectTimer = null;
     connection
       .connect()
       .then(() => {
         logger.info('FR-06: reconnected', { uniqueId, afterAttempts: attemptNumber });
         const reconnectedContext = connectionContexts.get(uniqueId);
-        if (reconnectedContext) {
+        if (reconnectedContext && !reconnectedContext.manualDisconnect) {
+          publishLiveStatus('CONNECTED', uniqueId);
           reconnectedContext.reconnectAttempts = 0;
           // TikTok replays the current viewer backlog again after a fresh
           // WebSocket handshake -- restart the BR-JN-04 backlog window.
@@ -420,6 +436,7 @@ function scheduleReconnect(uniqueId, connection) {
  */
 function giveUpReconnecting(uniqueId) {
   logger.error('FR-06: reconnect attempts exhausted, giving up', { uniqueId, maxAttempts: RECONNECT_MAX_ATTEMPTS });
+  publishLiveStatus('ERROR', uniqueId, 'Không thể kết nối lại. Vui lòng thử kết nối phòng LIVE lại.');
   closeSession(uniqueId, 'disconnected');
   stopJoinBroadcastTimer(uniqueId);
   activeConnections.delete(uniqueId);
@@ -529,7 +546,7 @@ async function closeSession(uniqueId, status) {
   }
 }
 
-async function disconnectFromLiveStream(uniqueId) {
+async function disconnectFromLiveStream(uniqueId, ended = false) {
   const connection = activeConnections.get(uniqueId);
   if (!connection) {
     return false;
@@ -542,6 +559,7 @@ async function disconnectFromLiveStream(uniqueId) {
       clearTimeout(context.reconnectTimer);
     }
   }
+  if (!ended) publishLiveStatus('DISCONNECTED', null);
   await closeSession(uniqueId, 'disconnected');
   connection.disconnect();
   stopJoinBroadcastTimer(uniqueId);

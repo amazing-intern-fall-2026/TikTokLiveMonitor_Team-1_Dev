@@ -39,3 +39,9 @@ Frontend chạy tại `http://localhost:5173`.
 ```bash
 docker compose up --build
 ```
+
+## Demo cuối và nghiệm thu
+
+- [Kịch bản demo](docs/demo/final-demo.md)
+- [Rà soát bảo mật CSV](docs/demo/csv-security-review.md)
+- [Kết quả kiểm tra](docs/demo/verification.md)

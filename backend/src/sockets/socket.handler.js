@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { getLiveStatus } = require('./socket.service');
 const effectAckService = require('../services/effectAck.service');
 const ruleEngine = require('../services/RuleEngine.service');
 const { jwtSecret } = require('../config/env');
@@ -35,6 +36,7 @@ function registerSocketHandlers(io) {
 
   monitorNamespace.on('connection', (socket) => {
     monitorLog.info('Client connected', { socketId: socket.id });
+    socket.emit('LIVE_STATUS', getLiveStatus());
 
     // NFR-REL-03: resync this client's progress bars right away instead of
     // waiting for the next contributing event -- sent only to this socket,
