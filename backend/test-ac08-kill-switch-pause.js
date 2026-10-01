@@ -16,6 +16,32 @@ const AFTER_RESUME_TIMEOUT_MS = 2000;
 
 const results = [];
 
+// NFR-SEC-01/02: the operator routes need a Bearer JWT and /game needs a
+// game_client JWT in the handshake. Set ADMIN_USERNAME (default "operator"),
+// ADMIN_PASSWORD and GAME_CLIENT_SECRET, same values as the backend's env.
+let operatorToken = '';
+let gameToken = '';
+
+async function fetchTokens() {
+  const { ADMIN_USERNAME = 'operator', ADMIN_PASSWORD, GAME_CLIENT_SECRET } = process.env;
+  if (!ADMIN_PASSWORD || !GAME_CLIENT_SECRET) {
+    console.error('Set ADMIN_PASSWORD and GAME_CLIENT_SECRET (and ADMIN_USERNAME if not "operator").');
+    process.exit(1);
+  }
+  const post = async (path, body) => {
+    const res = await fetch(`${SERVER_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!json.token) throw new Error(`${path} -> HTTP ${res.status}: ${json.message}`);
+    return json.token;
+  };
+  operatorToken = await post('/api/auth/login', { username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+  gameToken = await post('/api/auth/game-token', { clientSecret: GAME_CLIENT_SECRET });
+}
+
 function record(name, pass, detail) {
   results.push({ name, pass, detail });
   console.log(`${pass ? '✅ PASS' : '❌ FAIL'} - ${name}${detail ? ` (${detail})` : ''}`);
@@ -24,7 +50,7 @@ function record(name, pass, detail) {
 async function postJson(path, body) {
   const res = await fetch(`${SERVER_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${operatorToken}` },
     body: JSON.stringify(body || {}),
   });
   return res.json();
@@ -119,8 +145,9 @@ async function testPauseBlocksNewEffects(gameSocket, monitorSocket) {
 }
 
 async function main() {
+  await fetchTokens();
   console.log(`Kết nối tới ${SERVER_URL} (/game và /monitor)...`);
-  const gameSocket = io(`${SERVER_URL}/game`, { transports: ['websocket'] });
+  const gameSocket = io(`${SERVER_URL}/game`, { transports: ['websocket'], auth: { token: gameToken } });
   const monitorSocket = io(`${SERVER_URL}/monitor`, { transports: ['websocket'] });
 
   gameSocket.on('EFFECT_COMMAND', (cmd) => gameSocket.emit('EFFECT_ACK', { commandId: cmd.commandId, status: 'APPLIED' }));
