@@ -66,6 +66,18 @@ function setEffectsPaused(paused) {
   return effectsPaused;
 }
 
+/**
+ * FR-33 / AC-08: drops every EffectCommand still waiting in the dispatch
+ * queue and returns how many were dropped. Without this, commands queued
+ * before the kill switch (drained at 3/s) would keep reaching the Game
+ * Client right after CLEAR_ALL_EFFECTS.
+ */
+function clearEffectQueue() {
+  const dropped = effectQueue.length;
+  effectQueue.length = 0;
+  return dropped;
+}
+
 function isEffectsPaused() {
   return effectsPaused;
 }
@@ -449,4 +461,12 @@ function getProgressSnapshot() {
   });
 }
 
-module.exports = { init, reload, processEvent, getProgressSnapshot, setEffectsPaused, isEffectsPaused };
+module.exports = {
+  init,
+  reload,
+  processEvent,
+  getProgressSnapshot,
+  setEffectsPaused,
+  isEffectsPaused,
+  clearEffectQueue,
+};

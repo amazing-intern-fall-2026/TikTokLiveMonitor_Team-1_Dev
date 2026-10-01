@@ -117,12 +117,11 @@ gắn với rule nào (xem bảng `effect_commands.rule_id` — cột này nulla
 nhận được lệnh trùng khít với `issuedAt` (chênh lệch dưới 1 mili-giây) —
 tốc độ phát lệnh khẩn cấp không phải điểm nghẽn.
 
-> **Giới hạn hiện tại, team Game cần biết:** AC-08 đầy đủ còn yêu cầu
-> "không effect mới nào được phát cho tới khi Operator bật lại" — cơ chế
-> tạm dừng (pause state) này **chưa được xây ở backend**. Sau khi
-> `CLEAR_ALL_EFFECTS` được phát, nếu Rule Engine tiếp tục tích đủ ngưỡng
-> một rule khác, lệnh `EFFECT_COMMAND` mới vẫn sẽ được gửi bình thường.
-> Đây là việc còn tồn đọng (thuộc FR-32), không phải bug.
+> **AC-08 đầy đủ:** ngay khi nhận kill-switch, backend (1) chuyển sang
+> trạng thái tạm dừng effect, (2) xoá mọi `EFFECT_COMMAND` còn nằm trong
+> hàng đợi, (3) phát `CLEAR_ALL_EFFECTS`. Sẽ không có `EFFECT_COMMAND` mới
+> nào được gửi cho tới khi Operator bấm tiếp tục (`POST /api/effects/resume`).
+> Kiểm chứng bằng `npm run bench` (xem README).
 
 ---
 

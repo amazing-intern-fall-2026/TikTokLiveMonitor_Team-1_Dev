@@ -1,11 +1,32 @@
 // frontend/src/services/api.js
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
+const TOKEN_KEY = 'jwt_token';
+
+// NFR-SEC-01: the operator-facing routes (livestream connect/disconnect,
+// effects kill-switch/pause/resume, ...) now sit behind requireAuth, so every
+// call must carry the JWT that LoginPage stored under TOKEN_KEY.
+function authHeaders() {
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function request(endpoint, options = {}) {
+  const { headers, ...rest } = options;
   const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+    ...rest,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...headers },
   });
+  if (res.status === 401) {
+    // Token missing/expired/invalid: drop it and reload so App.jsx falls back
+    // to the Login screen instead of leaving a dashboard that can't do anything.
+    try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+    window.location.reload();
+  }
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);

@@ -17,7 +17,14 @@ function requireAuth(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, jwtSecret);
+    const payload = jwt.verify(token, jwtSecret);
+    // NFR-SEC-02: login and game-token share JWT_SECRET (only `role` differs),
+    // so the signature alone does not prove an operator -- without this check a
+    // game_client token could hit the kill-switch, rules CRUD, etc.
+    if (payload.role !== 'operator') {
+      return res.status(403).json({ message: 'Token không có quyền operator' });
+    }
+    req.user = payload;
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token không hợp lệ hoặc đã hết hạn' });
