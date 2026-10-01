@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS live_streams (
 -- is a no-op on an existing table, so the new columns need adding here too).
 ALTER TABLE live_streams ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE live_streams ADD COLUMN IF NOT EXISTS live_started_at TIMESTAMP;
+-- FR-38: sessions are filtered by room via host_username.
+CREATE INDEX IF NOT EXISTS idx_live_streams_host_username ON live_streams(host_username) WHERE deleted_at IS NULL;
 
 -- One row per monitoring connection to a live_stream (a stream can be
 -- reconnected to multiple times if the connector drops and retries).
@@ -38,6 +40,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     deleted_at TIMESTAMP
 );
 CREATE INDEX idx_sessions_live_stream_id ON sessions(live_stream_id);
+-- FR-38: GET /api/sessions lists newest-first, optionally filtered by room
+-- and/or a connected_at date range. Partial (deleted_at IS NULL) because the
+-- list never returns soft-deleted rows.
+CREATE INDEX IF NOT EXISTS idx_sessions_connected_at ON sessions(connected_at DESC, id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_stream_connected_at ON sessions(live_stream_id, connected_at DESC, id DESC) WHERE deleted_at IS NULL;
 
 -- A TikTok viewer, identified by TikTok's own user id (stable across name
 -- changes). Populated/updated the first time we see them in a chat/gift/join
