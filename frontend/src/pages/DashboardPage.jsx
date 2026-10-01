@@ -33,12 +33,15 @@ const FEED_TABS = [
 export default function DashboardPage({ adminUsername, onLogout }) {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [tiktokUsername, setTiktokUsername] = useState('');
-  const [activeRoom, setActiveRoom] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [feedTab, setFeedTab] = useState('ALL');
 
   const {
     connectionStatus,
+    activeRoom,
+    setActiveRoom,
+    socketError,
+    liveError,
     setConnectionStatus,
     chatEvents,
     joinEvents,
@@ -59,6 +62,20 @@ export default function DashboardPage({ adminUsername, onLogout }) {
   const showComment = feedTab === 'ALL' || feedTab === 'COMMENT';
   const showGift = feedTab === 'ALL' || feedTab === 'GIFT';
   const showJoin = feedTab === 'ALL' || feedTab === 'JOIN';
+
+  const statusLabels = {
+    DISCONNECTED: 'Chưa kết nối LIVE', CONNECTING: 'Đang kết nối',
+    CONNECTED: `LIVE Connected @${activeRoom}`, RECONNECTING: 'Đang kết nối lại',
+    ENDED: 'LIVE đã kết thúc', ERROR: 'Lỗi kết nối LIVE',
+  };
+  const displayStatus = socketError ? 'RECONNECTING' : connectionStatus;
+  const emptyMessage = connectionStatus === 'ENDED' ? 'LIVE đã kết thúc. Kết nối phòng để xem phiên mới.'
+    : displayStatus === 'RECONNECTING' ? 'Đang kết nối lại. Dữ liệu sẽ tiếp tục khi kết nối khôi phục.'
+    : connectionStatus === 'ERROR' ? 'Không thể nhận dữ liệu. Vui lòng thử kết nối lại.'
+    : connectionStatus === 'DISCONNECTED' ? 'Kết nối một phòng TikTok LIVE để bắt đầu.' : '';
+  const runMock = async (action) => {
+    try { await action(); } catch (err) { setErrorMessage(err.message || 'Không gửi được sự kiện thử nghiệm'); }
+  };
 
   const isBusyConnecting = connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING';
 
@@ -92,7 +109,8 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     try {
       await api.disconnectRoom();
     } catch (e) {
-      console.warn(e);
+      setErrorMessage(e.message || 'Không thể ngắt kết nối. Vui lòng thử lại.');
+      return;
     }
     setConnectionStatus('DISCONNECTED');
     setActiveRoom('');
@@ -188,7 +206,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                       placeholder="Nhập TikTok username..."
                       disabled={connectionStatus === 'CONNECTED' || isBusyConnecting}
                     />
-                    {connectionStatus === 'CONNECTED' ? (
+                    {(connectionStatus === 'CONNECTED' || connectionStatus === 'RECONNECTING') ? (
                       <button className="btn btn-outline btn-sm" onClick={handleDisconnect}>
                         Ngắt kết nối
                       </button>
@@ -198,10 +216,10 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                       </button>
                     )}
                   </div>
-                  <div className="status-line">
-                    <span className={`status-dot dot-${connectionStatus.toLowerCase()}`} />
+                  <div className="status-line" role="status" aria-live="polite">
+                    <span className={`status-dot dot-${displayStatus.toLowerCase()}`} />
                     <span className="status-text">
-                      {connectionStatus === 'CONNECTED' ? `LIVE Connected @${activeRoom}` : connectionStatus}
+                      {statusLabels[displayStatus]}
                     </span>
                   </div>
                 </div>
@@ -224,7 +242,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               </div>
             </header>
 
-            {errorMessage && <div className="alert alert-error page-alert">{errorMessage}</div>}
+            {(errorMessage || socketError || liveError) && <div role="alert" className="alert alert-error page-alert">{errorMessage || socketError || liveError}</div>}
 
             <section className="metrics-grid">
               <div className="metric-card">
@@ -255,7 +273,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                 <p className="page-subtitle">Bình luận · Quà tặng · Hoạt động</p>
               </div>
               <RuleProgressSection />
-              <span className="receiving-pill">● Receiving</span>
+              <span className="receiving-pill">{displayStatus === 'CONNECTED' ? '● Receiving' : statusLabels[displayStatus]}</span>
             </div>
 
             <div className="feed-tabs" role="tablist" aria-label="Lọc feed theo loại sự kiện">
@@ -282,7 +300,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   className="col-body"
                   items={chatEvents}
                   itemHeight={CHAT_ROW_HEIGHT}
-                  emptyState={<div className="empty-state">Chưa có bình luận mới</div>}
+                  emptyState={<div className="empty-state">{emptyMessage || 'Chưa có bình luận mới'}</div>}
                   renderItem={(e) => (
                     <div key={e.id} className="feed-row chat-row">
                       <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
@@ -301,7 +319,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   className="col-body"
                   items={giftEvents}
                   itemHeight={GIFT_ROW_HEIGHT}
-                  emptyState={<div className="empty-state">Chưa có quà tặng</div>}
+                  emptyState={<div className="empty-state">{emptyMessage || 'Chưa có quà tặng'}</div>}
                   renderItem={(e) => (
                     <div key={e.id} className={`feed-row gift-row ${e.diamonds >= 100 ? 'gift-large' : ''}`}>
                       <div className="gift-row-top">
@@ -339,7 +357,7 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                   className="col-body"
                   items={joinEvents}
                   itemHeight={JOIN_ROW_HEIGHT}
-                  emptyState={<div className="empty-state">Chưa có khán giả mới</div>}
+                  emptyState={<div className="empty-state">{emptyMessage || 'Chưa có khán giả mới'}</div>}
                   renderItem={(e) => (
                     <div key={e.id} className="feed-row join-row">
                       <span className="row-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
@@ -354,11 +372,11 @@ export default function DashboardPage({ adminUsername, onLogout }) {
 
             <footer className="bottom-mock-bar">
               <span className="mock-lbl">MOCK DEV TOOLS:</span>
-              <button className="btn btn-sm" onClick={() => api.sendMockChat('HEAL')}>+ Chat "!HEAL"</button>
-              <button className="btn btn-sm" onClick={() => api.sendMockChat('SLOW')}>+ Chat "!SLOW"</button>
-              <button className="btn btn-sm" onClick={() => api.sendMockMemberJoin(viewerCount + 1)}>+ 1 Khán giả Join</button>
-              <button className="btn btn-sm" onClick={() => api.sendMockGift('Hoa Hồng', 1, 1, true)}>+ Quà 1💎</button>
-              <button className="btn btn-sm" onClick={() => api.sendMockGift('Sư Tử', 1, 1000, true)}>+ Quà Boss 1000💎</button>
+              <button className="btn btn-sm" onClick={() => runMock(() => api.sendMockChat('HEAL'))}>+ Chat "!HEAL"</button>
+              <button className="btn btn-sm" onClick={() => runMock(() => api.sendMockChat('SLOW'))}>+ Chat "!SLOW"</button>
+              <button className="btn btn-sm" onClick={() => runMock(() => api.sendMockMemberJoin(viewerCount + 1))}>+ 1 Khán giả Join</button>
+              <button className="btn btn-sm" onClick={() => runMock(() => api.sendMockGift('Hoa Hồng', 1, 1, true))}>+ Quà 1💎</button>
+              <button className="btn btn-sm" onClick={() => runMock(() => api.sendMockGift('Sư Tử', 1, 1000, true))}>+ Quà Boss 1000💎</button>
             </footer>
           </>
         )}

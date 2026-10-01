@@ -23,6 +23,9 @@ function resolveUserName(data, fallback = 'Khán giả') {
 
 export function useLiveSocket() {
     const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
+    const [activeRoom, setActiveRoom] = useState('');
+    const [socketError, setSocketError] = useState('');
+    const [liveError, setLiveError] = useState('');
     const [chatEvents, setChatEvents] = useState([]);
     const [joinEvents, setJoinEvents] = useState([]);
     const [giftEvents, setGiftEvents] = useState([]);
@@ -69,12 +72,18 @@ export function useLiveSocket() {
         });
         socketRef.current = socket;
 
-        socket.on('connect', () => {
-            setConnectionStatus((prev) => (prev === 'RECONNECTING' ? 'CONNECTED' : prev));
-        });
-
+        socket.on('connect', () => setSocketError(''));
         socket.on('disconnect', () => {
-            setConnectionStatus((prev) => (prev === 'CONNECTED' ? 'RECONNECTING' : prev));
+            setSocketError('Mất kết nối tới máy chủ. Đang kết nối lại…');
+        });
+        socket.on('connect_error', () => {
+            setSocketError('Không thể kết nối tới máy chủ. Đang kết nối lại…');
+        });
+        socket.on('LIVE_STATUS', (data) => {
+            if (!['CONNECTED', 'DISCONNECTED', 'RECONNECTING', 'ENDED', 'ERROR'].includes(data?.status)) return;
+            setConnectionStatus(data.status);
+            setActiveRoom(data.username || '');
+            setLiveError(data.status === 'ERROR' ? (data.message || 'Không thể kết nối phòng LIVE') : '');
         });
 
         // Chưa được backend phát ở thời điểm này (chỉ có CHAT/GIFT/MEMBER_JOIN/
@@ -195,6 +204,10 @@ export function useLiveSocket() {
     return {
         connectionStatus,
         setConnectionStatus,
+        activeRoom,
+        setActiveRoom,
+        socketError,
+        liveError,
         chatEvents,
         joinEvents,
         giftEvents,

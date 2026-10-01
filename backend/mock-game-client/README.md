@@ -16,11 +16,11 @@
 ## 2. Chạy
 
 ```bash
-node index.js http://localhost:5000
+GAME_TOKEN='<token>' node index.js http://localhost:5000
 ```
 Tham số đầu tiên là URL backend, mặc định `http://localhost:5000` nếu bỏ trống:
 ```bash
-node index.js
+GAME_TOKEN='<token>' node index.js
 ```
 
 Kết nối thành công sẽ thấy:
@@ -63,32 +63,33 @@ thức**. Trước khi code Game thật, đọc:
 - `docs/api/game-integration-guide.md` — hướng dẫn tích hợp tổng quan
   (cách connect, các lệnh sẽ nhận, mục 6 có ghi chú về Kill Switch/Pause).
 
-## 5. ⚠️ Về xác thực token — ĐỌC KỸ TRƯỚC KHI TRIỂN KHAI THẬT
+## 5. Xác thực token cho `/game` (NFR-SEC-02)
 
-`docs/api/game-token-spec.md` mô tả cơ chế xác thực bằng JWT cho namespace
-`/game` (yêu cầu gốc NFR-SEC-02 — kênh WebSocket sang Game Client phải
-dùng token có thời hạn). Báo cáo nội bộ tuần này (Thứ Tư 23/09) từng ghi
-task đó là "đã hoàn thành", nhưng khi review lại code thật (25/09/2026),
-**middleware xác thực (`gameNamespace.use(...)`) và endpoint cấp token
-(`POST /api/auth/game-token`) đều CHƯA tồn tại trong code** — không có ở
-nhánh `main`, và tìm trong toàn bộ lịch sử git cũng không thấy commit nào
-từng thêm nó. Đây là gap thật, không phải nhầm lẫn tài liệu.
+Backend đã có `POST /api/auth/game-token` và middleware JWT trên `/game`.
+Cấu hình `JWT_SECRET`, `GAME_CLIENT_SECRET` và tùy chọn
+`GAME_TOKEN_EXPIRES_IN` (mặc định `24h`) trong môi trường backend.
 
-**Nghĩa là: hiện tại (25/09/2026) bất kỳ ai biết URL backend đều connect
-được vào `/game` mà không cần token nào** — file `index.js` trong bộ này
-vẫn chạy bình thường không cần `GAME_TOKEN` là vì lý do đó, không phải vì
-mock được "ưu tiên" bỏ qua xác thực.
+1. Gọi `POST http://localhost:5000/api/auth/game-token` với JSON
+   `{ "clientSecret": "<GAME_CLIENT_SECRET của backend>" }`.
+2. Lấy trường `token` trong response và chạy:
 
-`index.js` đã được chuẩn bị sẵn để gửi token khi cần (đọc từ biến môi
-trường `GAME_TOKEN`), để khi nào backend code xong phần xác thực này thì
-chỉ cần:
 ```bash
-GAME_TOKEN=<token lấy từ POST /api/auth/game-token> node index.js
+GAME_TOKEN='<token>' node index.js http://localhost:5000
 ```
-mà không cần sửa code mock. Nhưng **Game team không nên tự code phần lấy
-token cho Game thật cho tới khi được xác nhận `POST /api/auth/game-token`
-đã tồn tại trên backend** — liên hệ team Backend (Nguyễn Thiên Tài, người
-được bàn giao spec này) để xác nhận trước.
+
+PowerShell:
+
+```powershell
+$env:GAME_TOKEN = '<token>'
+node index.js http://localhost:5000
+```
+
+Mock gửi `auth: { token: GAME_TOKEN }` tại handshake. Backend từ chối
+`MISSING_TOKEN`, `INVALID_OR_EXPIRED_TOKEN`, hoặc `WRONG_ROLE` (token
+Operator không dùng cho Game). Khi token hết hạn, lấy token mới trước khi
+kết nối lại; mock chưa tự động cấp/refresh token. Middleware kiểm tra tại
+handshake, chưa tự ngắt socket đang mở khi token hết hạn.
+Không commit token hoặc client secret. Contract: `docs/api/game-token-spec.md`.
 
 ## 6. Việc KHÔNG nằm trong phạm vi mock này
 

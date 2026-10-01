@@ -114,3 +114,9 @@ Script tự đăng nhập, lấy game token, tạo 1 rule tạm (xoá khi xong) 
 Ngưỡng p95 mặc định 2000 ms chỉ là **giả định** (nội dung NFR-PERF-01 trong SRS không có trong repo) –
 truyền `--p95-ms` đúng theo SRS. Thoát code 0 nếu mọi kiểm tra đạt, 1 nếu có kiểm tra rớt.
 `backend/load-test.js` là công cụ khác: đo độ trễ kết nối thật tới TikTok (`STREAMERS=a,b node load-test.js`).
+
+## Demo cuối và nghiệm thu
+
+- [Kịch bản demo](docs/demo/final-demo.md)
+- [Rà soát bảo mật CSV](docs/demo/csv-security-review.md)
+- [Kết quả kiểm tra](docs/demo/verification.md)

@@ -7,6 +7,12 @@ thế bước đó)
 
 ---
 
+> Cập nhật 01/10/2026: đây vẫn là thiết kế đề xuất, chưa triển khai HMAC
+> vào bulkUpsert. CSV đã bỏ định danh contributor ở tầng xuất, xem
+> `../demo/csv-security-review.md`. Không dùng việc sửa CSV để kết luận
+> DB đã ẩn danh hoặc toàn hệ thống tuân thủ pháp luật. Căn cứ NĐ 13 trong
+> tài liệu cần rà soát lại theo NĐ 356/2025 thay thế.
+
 ## 1. Vấn đề cần giải quyết
 
 `tiktok_user_id` (định danh nội bộ TikTok của khán giả) hiện đang lưu
