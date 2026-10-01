@@ -49,6 +49,22 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+
+// Đăng nhập thật, lấy JWT từ POST /api/login. Không qua request() vì lỗi
+  // 401 ở ĐÂY nghĩa là "sai mật khẩu" (hiển thị trong form), khác hẳn 401 ở
+  // mọi chỗ khác (nghĩa là "phiên hết hạn, về Login").
+  login: async (username, password) => {
+    const res = await fetch(`${BACKEND_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Đăng nhập thất bại');
+    }
+    return data; // { token, tokenType, expiresIn }
+  },
   // 1. Quản lý phòng Live (FR-01 -> FR-08)
   connectRoom: (username) =>
     request('/api/livestream/connect', {
