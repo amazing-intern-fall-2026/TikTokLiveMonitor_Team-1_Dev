@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -40,6 +40,12 @@ services:
       # NFR-SEC-04/06: required -- backend refuses to start without it. Set it
       # in the repo-root `.env` or the shell (see backend/.env.example).
       - USER_ID_PEPPER=${USER_ID_PEPPER:?USER_ID_PEPPER must be set}
+      # NFR-SEC-01/02: auth secrets. Without them /api/auth/login and
+      # /api/auth/game-token answer 500 "chưa cấu hình", so they are required.
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-operator}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - GAME_CLIENT_SECRET=${GAME_CLIENT_SECRET:?GAME_CLIENT_SECRET must be set}
       # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
       - LOG_LEVEL=info
     depends_on:
@@ -61,12 +67,22 @@ services:
       start_period: 10s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:5000}
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   db_data:
