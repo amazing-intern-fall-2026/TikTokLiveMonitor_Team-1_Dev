@@ -1,3 +1,4 @@
+const sessionRepository = require('../repositories/session.repository');
 const sessionReportRepository = require('../repositories/sessionReport.repository');
 
 /** FR-38: liệt kê các phiên ĐÃ ĐÓNG (đã có report), phân trang, phục vụ modal "Lịch sử phiên". Phiên đang chạy (disconnected_at NULL) không xuất hiện -- chưa có gì để xem/tải. */
@@ -89,4 +90,45 @@ async function exportBySessionId(req, res) {
   res.status(400).json({ message: `Unsupported format "${format}" -- use "json" or "csv"` });
 }
 
-module.exports = { listSessions, getBySessionId, exportBySessionId, reportToCsv };
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isValidDate = (v) => DATE_RE.test(v) && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().startsWith(v);
+
+/** FR-38: GET /api/sessions?page=&limit=&host=&liveStreamId=&from=&to= -- paginated session history. */
+async function list(req, res) {
+  const { host, liveStreamId, from, to } = req.query;
+  const page = req.query.page === undefined ? 1 : Number(req.query.page);
+  const limit = req.query.limit === undefined ? 20 : Number(req.query.limit);
+
+  if (!Number.isInteger(page) || page < 1) {
+    return res.status(400).json({ message: 'page must be a positive integer' });
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return res.status(400).json({ message: 'limit must be an integer between 1 and 100' });
+  }
+  if (liveStreamId !== undefined && !/^\d+$/.test(liveStreamId)) {
+    return res.status(400).json({ message: 'liveStreamId must be a positive integer' });
+  }
+  for (const [name, value] of [['from', from], ['to', to]]) {
+    if (value !== undefined && !isValidDate(value)) {
+      return res.status(400).json({ message: `${name} must be a valid date in YYYY-MM-DD format` });
+    }
+  }
+  if (from && to && from > to) {
+    return res.status(400).json({ message: 'from must not be after to' });
+  }
+
+  const { rows, total } = await sessionRepository.findPage({
+    hostUsername: host ? String(host).trim().replace(/^@/, '') : undefined,
+    liveStreamId: liveStreamId ? Number(liveStreamId) : undefined,
+    from,
+    to,
+    limit,
+    offset: (page - 1) * limit,
+  });
+
+  res.json({ data: rows, page, limit, total, totalPages: Math.ceil(total / limit) });
+}
+
+
+module.exports = { listSessions, getBySessionId, exportBySessionId, reportToCsv, list };

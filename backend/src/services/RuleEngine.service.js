@@ -22,10 +22,10 @@ const MAX_EFFECTS_PER_SECOND = 3; // FR-29
 const DISPATCH_INTERVAL_MS = Math.floor(1000 / MAX_EFFECTS_PER_SECOND);
 
 /**
- * Active rules loaded once at startup (see init()). There is no Rule CRUD
- * API yet (FR-21+), so rules are read from the `rules` table and cached --
- * matches NFR-MNT-01 (effectCode changes are config, not code) without
- * building a reload endpoint nobody asked for.
+ * Active rules, cached in RAM so processEvent() never hits Postgres. Loaded
+ * at startup (init()) and re-read by reload() whenever the Rule CRUD API
+ * (rule.controller.js) changes a rule, so edits take effect without a restart
+ * (NFR-MNT-01: effectCode changes are config, not code).
  */
 let activeRules = [];
 
@@ -66,18 +66,96 @@ function setEffectsPaused(paused) {
   return effectsPaused;
 }
 
+/**
+ * FR-33 / AC-08: drops every EffectCommand still waiting in the dispatch
+ * queue and returns how many were dropped. Without this, commands queued
+ * before the kill switch (drained at 3/s) would keep reaching the Game
+ * Client right after CLEAR_ALL_EFFECTS.
+ */
+function clearEffectQueue() {
+  const dropped = effectQueue.length;
+  effectQueue.length = 0;
+  return dropped;
+}
+
 function isEffectsPaused() {
   return effectsPaused;
 }
 
-/** Loads the active rule set from Postgres and starts the throttled dispatcher. Call once at server startup. */
-async function init() {
+/** Monotonic id so that if two reloads overlap, only the most recently *started* one may publish its result. */
+let reloadSeq = 0;
+
+/** Same rule definition? Compared by content so a no-op PUT doesn't wipe running progress. */
+function sameRule(a, b) {
+  return (
+    a.name === b.name &&
+    a.event_type === b.event_type &&
+    JSON.stringify(a.condition) === JSON.stringify(b.condition) &&
+    JSON.stringify(a.effect) === JSON.stringify(b.effect)
+  );
+}
+
+/**
+ * Drops runtime state tied to rules that were removed, disabled or edited.
+ * Edited rules restart from zero (their old progress was measured against
+ * the old threshold/condition); unchanged rules keep counters and cooldowns.
+ */
+function discardStateFor(staleRuleIds) {
+  if (staleRuleIds.size === 0) {
+    return;
+  }
+  const prefixes = [...staleRuleIds].map((id) => `${id}:`);
+  const isStale = (key) => prefixes.some((p) => key.startsWith(p));
+  for (const key of [...counters.keys()]) {
+    if (isStale(key)) counters.delete(key);
+  }
+  for (const key of [...throttleLog.keys()]) {
+    if (isStale(key)) throttleLog.delete(key);
+  }
+  // Commands already queued for a rule that no longer exists / is disabled must not fire.
+  for (let i = effectQueue.length - 1; i >= 0; i--) {
+    if (staleRuleIds.has(effectQueue[i].ruleId)) effectQueue.splice(i, 1);
+  }
+}
+
+/**
+ * Hot reload: re-reads the active rule set from Postgres and swaps it in
+ * atomically. Never throws -- on a DB error the previous rule set stays
+ * active (the change is already saved; the next reload picks it up) and
+ * false is returned.
+ */
+async function reload() {
+  const seq = ++reloadSeq;
+  let rules;
   try {
-    activeRules = await ruleRepository.findActive();
-    logger.info(`Loaded ${activeRules.length} active rule(s)`);
+    rules = await ruleRepository.findActive();
   } catch (err) {
-    logger.error('Failed to load rules, engine will run with 0 rules', { error: err.message });
-    activeRules = [];
+    logger.error('Failed to reload rules, keeping the previous rule set', { error: err.message });
+    return false;
+  }
+  if (seq !== reloadSeq) {
+    return true; // a newer reload started meanwhile and will publish a fresher result
+  }
+
+  const nextById = new Map(rules.map((r) => [r.id, r]));
+  const stale = new Set();
+  for (const old of activeRules) {
+    const next = nextById.get(old.id);
+    if (!next || !sameRule(old, next)) {
+      stale.add(old.id);
+    }
+  }
+  discardStateFor(stale);
+
+  activeRules = rules;
+  logger.info(`Loaded ${activeRules.length} active rule(s)`);
+  return true;
+}
+
+/** Loads the active rule set and starts the throttled dispatcher. Call once at server startup. */
+async function init() {
+  if (!(await reload())) {
+    logger.error('Initial rule load failed, engine will run with 0 rules until the next reload');
   }
 
   if (!dispatchTimer) {
@@ -383,4 +461,12 @@ function getProgressSnapshot() {
   });
 }
 
-module.exports = { init, processEvent, getProgressSnapshot, setEffectsPaused, isEffectsPaused };
+module.exports = {
+  init,
+  reload,
+  processEvent,
+  getProgressSnapshot,
+  setEffectsPaused,
+  isEffectsPaused,
+  clearEffectQueue,
+};

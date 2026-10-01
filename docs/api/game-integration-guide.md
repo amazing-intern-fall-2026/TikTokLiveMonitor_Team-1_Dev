@@ -223,9 +223,10 @@ tốc độ phát lệnh khẩn cấp không phải điểm nghẽn.
 > `backend/test-ac08-kill-switch-pause.js` — 8/8 assertion pass, bao gồm cả
 > độ trễ Kill Switch (đo thật ~40-100ms, luôn dưới 1s) lẫn việc pause chặn
 > effect mới triệt để. Quy trình chuẩn cho Game team: **Kill Switch xoá
-> effect đang chạy ngay lập tức** (mục này), **Pause chặn effect mới phát
-> sinh** (không tự động kèm theo kill switch — Operator cần chủ động bấm
-> cả 2 nếu muốn "dừng hẳn" toàn bộ).
+> effect đang chạy ngay lập tức** và đồng thời **tự chuyển sang trạng thái
+> Pause + xoá các `EFFECT_COMMAND` còn trong hàng đợi**, nên không effect mới
+> nào tới Game cho tới khi Operator bấm "Tiếp tục" (`POST /api/effects/resume`).
+> Kiểm chứng bằng `npm run bench` (xem README).
 
 ---
 

@@ -8,6 +8,8 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', sessionReportController.listSessions);
+// FR-38 (host/liveStreamId/from/to filters, { data, page, limit, total }).
+router.get('/search', sessionReportController.list);
 router.get('/:sessionId/report', sessionReportController.getBySessionId);
 router.get('/:sessionId/export', sessionReportController.exportBySessionId);
 

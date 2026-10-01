@@ -1,6 +1,12 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
+const ruleEngine = require('../services/RuleEngine.service');
+const { requireAuth } = require('../middlewares/auth.middleware');
+
+// NFR-SEC-01: rules decide which effects fire on the live stream -- operator only
+// (docs/api/rule-management-api-spec.md section 1).
+router.use(requireAuth);
 
 // Lấy danh sách rules chưa bị soft-delete
 router.get('/', async (req, res, next) => {
@@ -29,6 +35,7 @@ router.post('/', async (req, res, next) => {
       [name, normalizedType, JSON.stringify(condition || {}), JSON.stringify(effect || {}), isActive ?? true]
     );
 
+    await ruleEngine.reload();
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
     next(err);
@@ -50,6 +57,7 @@ router.patch('/:id/toggle', async (req, res, next) => {
       [nextState, id]
     );
 
+    await ruleEngine.reload();
     res.json({ success: true, data: updateRes.rows[0] });
   } catch (err) {
     next(err);
@@ -67,6 +75,7 @@ router.delete('/:id', async (req, res, next) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy Rule.' });
     }
+    await ruleEngine.reload();
     res.json({ success: true, message: 'Đã xóa Rule thành công.' });
   } catch (err) {
     next(err);

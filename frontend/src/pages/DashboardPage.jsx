@@ -48,6 +48,9 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     giftEvents,
     viewerCount,
     stats,
+    roomInfo,
+    setRoomInfo,
+    roomStatus,
     resetDashboardState,
     isPaused,
   } = useLiveSocket();
@@ -85,11 +88,15 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     }
     try {
       setConnectionStatus('CONNECTING');
-      await api.connectRoom(cleanUsername);
+      const room = await api.connectRoom(cleanUsername);
       // Vá lỗi chuyển phòng: chủ động đưa feed + metrics về 0 ngay khi đổi
       // @handle kết nối thành công, không đợi SESSION_RESET từ backend
       // (backend chưa phát event này) -- xem ghi chú trong useLiveSocket.js.
       resetDashboardState();
+      // FR-09: avatar + giờ bắt đầu LIVE đã có sẵn trong response /connect
+      // (xem liveStream.controller.js) -- set ngay, không cần đợi ROOM_INFO
+      // qua socket (vốn chỉ còn hữu ích cho trường hợp reconnect).
+      setRoomInfo({ avatarUrl: room.avatarUrl ?? null, liveStartedAt: room.liveStartedAt ?? null });
       setActiveRoom(cleanUsername);
       setConnectionStatus('CONNECTED');
     } catch (err) {
@@ -145,6 +152,8 @@ export default function DashboardPage({ adminUsername, onLogout }) {
         onNavChange={setActiveNav}
         adminUsername={adminUsername}
         activeRoom={activeRoom}
+        roomAvatarUrl={roomInfo.avatarUrl}
+        roomStartedAt={roomInfo.liveStartedAt}
         onLogout={onLogout}
       />
 
@@ -214,6 +223,22 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                     </span>
                   </div>
                 </div>
+                {/* FR-08: phân biệt "LIVE đã kết thúc" (host tắt live / bị khoá)
+                    với "mất mạng tạm thời, đang thử kết nối lại" -- hai trạng
+                    thái khác hẳn nhau về ý nghĩa với người vận hành, không thể
+                    gộp chung một dòng "Disconnected". */}
+                {connectionStatus === 'CONNECTED' && roomStatus === 'ENDED' && (
+                  <div className="status-line room-status-line">
+                    <span className="status-dot dot-error" />
+                    <span className="status-text">LIVE đã kết thúc</span>
+                  </div>
+                )}
+                {connectionStatus === 'CONNECTED' && roomStatus === 'RECONNECTING' && (
+                  <div className="status-line room-status-line">
+                    <span className="status-dot dot-reconnecting" />
+                    <span className="status-text">Mất kết nối tạm thời, đang thử kết nối lại...</span>
+                  </div>
+                )}
               </div>
             </header>
 

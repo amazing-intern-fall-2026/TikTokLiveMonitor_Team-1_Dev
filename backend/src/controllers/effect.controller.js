@@ -20,9 +20,15 @@ async function killSwitch(req, res) {
     issuedAt: new Date().toISOString(),
   };
 
+  // AC-08: after the kill switch no new effect may reach the Game until the
+  // operator re-enables -- pause first (so nothing new queues) and flush what
+  // is already queued, then tell the Game to clear what is running. Resume is
+  // the existing POST /effects/resume.
   ruleEngine.setEffectsPaused(true);
+  const dropped = ruleEngine.clearEffectQueue();
+  logger.info('Kill switch: effects paused', { droppedQueuedCommands: dropped });
+
   broadcastGameCommand('CLEAR_ALL_EFFECTS', payload);
-  ruleEngine.setEffectsPaused(true);
 
   effectCommandRepository
     .create({ sessionId: liveStreamService.getCurrentSessionId(), payload, status: 'SENT' })

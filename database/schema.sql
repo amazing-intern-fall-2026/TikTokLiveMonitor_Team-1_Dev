@@ -7,8 +7,21 @@ CREATE TABLE IF NOT EXISTS live_streams (
     started_at TIMESTAMP NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMP,
     viewer_count INTEGER DEFAULT 0,
+    -- FR-09: streamer's profile picture and the TikTok-reported broadcast
+    -- start time (connector's roomInfo.create_time), fetched once per
+    -- connect. Distinct from started_at above, which is when this row was
+    -- first created (i.e. the first time we ever connected to this host),
+    -- not necessarily when the current LIVE actually started.
+    avatar_url TEXT,
+    live_started_at TIMESTAMP,
     deleted_at TIMESTAMP
 );
+-- Idempotent for DBs created before FR-09 (CREATE TABLE IF NOT EXISTS above
+-- is a no-op on an existing table, so the new columns need adding here too).
+ALTER TABLE live_streams ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE live_streams ADD COLUMN IF NOT EXISTS live_started_at TIMESTAMP;
+-- FR-38: sessions are filtered by room via host_username.
+CREATE INDEX IF NOT EXISTS idx_live_streams_host_username ON live_streams(host_username) WHERE deleted_at IS NULL;
 
 -- One row per monitoring connection to a live_stream (a stream can be
 -- reconnected to multiple times if the connector drops and retries).
@@ -17,11 +30,21 @@ CREATE TABLE IF NOT EXISTS sessions (
     live_stream_id INTEGER NOT NULL REFERENCES live_streams(id),
     connected_at TIMESTAMP NOT NULL DEFAULT NOW(),
     disconnected_at TIMESTAMP,
-    status VARCHAR(20) NOT NULL DEFAULT 'connected', -- connected | disconnected | error
+    -- FR-08: 'ended' means TikTok's own STREAM_END event fired before the
+    -- disconnect (the host ended the broadcast, or got suspended) --
+    -- 'disconnected' means the connector dropped with no STREAM_END, i.e. a
+    -- transient network loss (possibly after FR-06 exhausted its reconnect
+    -- attempts). See liveStream.service.js's ControlEvent.DISCONNECTED handler.
+    status VARCHAR(20) NOT NULL DEFAULT 'connected', -- connected | disconnected | ended | error
     disconnect_reason VARCHAR(255),
     deleted_at TIMESTAMP
 );
 CREATE INDEX idx_sessions_live_stream_id ON sessions(live_stream_id);
+-- FR-38: GET /api/sessions lists newest-first, optionally filtered by room
+-- and/or a connected_at date range. Partial (deleted_at IS NULL) because the
+-- list never returns soft-deleted rows.
+CREATE INDEX IF NOT EXISTS idx_sessions_connected_at ON sessions(connected_at DESC, id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_stream_connected_at ON sessions(live_stream_id, connected_at DESC, id DESC) WHERE deleted_at IS NULL;
 
 -- A TikTok viewer, identified by TikTok's own user id (stable across name
 -- changes). Populated/updated the first time we see them in a chat/gift/join

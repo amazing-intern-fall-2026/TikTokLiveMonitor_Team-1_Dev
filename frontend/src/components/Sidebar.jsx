@@ -55,7 +55,17 @@ function NavIcon({ name }) {
     }
 }
 
-export default function Sidebar({ activeNav, onNavChange, adminUsername, activeRoom, onLogout }) {
+// FR-09: định dạng giờ bắt đầu LIVE (từ roomInfo.create_time của connector)
+// theo giờ địa phương, ngắn gọn cho sidebar.
+function formatStartedAt(isoString) {
+    if (!isoString) return null;
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+export default function Sidebar({ activeNav, onNavChange, adminUsername, activeRoom, roomAvatarUrl, roomStartedAt, onLogout }) {
+    const startedAtLabel = formatStartedAt(roomStartedAt);
     return (
         <aside className="sidebar">
             <div className="sidebar-brand">
@@ -84,6 +94,29 @@ export default function Sidebar({ activeNav, onNavChange, adminUsername, activeR
             </nav>
 
             <div className="sidebar-footer">
+                {activeRoom && (
+                    <div className="sidebar-streamer">
+                        {/* FR-09: avatar streamer từ roomInfo -- có thể null nếu
+                            TikTok không trả (hoặc chưa xác định đúng field lúc
+                            runtime), nên luôn có fallback không crash. */}
+                        {roomAvatarUrl ? (
+                            <img
+                                src={roomAvatarUrl}
+                                alt={activeRoom}
+                                className="sidebar-streamer-avatar"
+                                width={28}
+                                height={28}
+                                onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
+                            />
+                        ) : (
+                            <span className="sidebar-streamer-avatar sidebar-streamer-avatar-fallback">@</span>
+                        )}
+                        <div>
+                            <p className="sidebar-streamer-name">@{activeRoom}</p>
+                            {startedAtLabel && <p className="sidebar-streamer-started">LIVE từ {startedAtLabel}</p>}
+                        </div>
+                    </div>
+                )}
                 <p>Đăng nhập: {adminUsername}</p>
                 <p className="sidebar-session">Session ID: {activeRoom || '—'}</p>
                 <button className="link-btn" onClick={onLogout}>Đăng xuất</button>
