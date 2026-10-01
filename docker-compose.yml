@@ -37,6 +37,11 @@ services:
       # only dotenv inside the Node process reads) or from the shell
       # environment; left blank falls back to the anonymous pool.
       - EULER_API_KEY=${EULER_API_KEY:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
+      - LOG_LEVEL=info
       # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
       - LOG_LEVEL=info
     depends_on:
