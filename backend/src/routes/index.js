@@ -4,6 +4,7 @@ const livestreamConnectionRoutes = require('./livestreamConnection.routes');
 const testEventRoutes = require('./testEvent.routes');
 const effectRoutes = require('./effect.routes');
 const sessionReportRoutes = require('./sessionReport.routes');
+const ruleRoutes = require('./rule.routes');
 const authRoutes = require('./auth.routes');
 const { nodeEnv } = require('../config/env');
 
@@ -18,6 +19,7 @@ if (nodeEnv !== 'production') {
 }
 router.use('/effects', effectRoutes);
 router.use('/sessions', sessionReportRoutes);
+router.use('/rules', ruleRoutes);
 router.use('/auth', authRoutes);
 
 module.exports = router;
