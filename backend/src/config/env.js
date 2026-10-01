@@ -21,6 +21,9 @@ module.exports = {
   adminUsername: process.env.ADMIN_USERNAME || '',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   jwtSecret: process.env.JWT_SECRET || '',
+  // NFR-SEC-04/06: HMAC key for pseudonymizing tiktok_user_id. Required by
+  // appUser.repository.js; do not rotate during the data's lifetime (policy 5.3).
+  userIdPepper: process.env.USER_ID_PEPPER || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   // NFR-SEC-02: shared secret for the Game Client to mint a JWT (role
   // game_client) via POST /api/auth/game-token -- see
