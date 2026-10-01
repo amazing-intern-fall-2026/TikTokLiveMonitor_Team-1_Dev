@@ -22,4 +22,10 @@ module.exports = {
   adminPassword: process.env.ADMIN_PASSWORD || '',
   jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
+  // NFR-SEC-02: shared secret for the Game Client to mint a JWT (role
+  // game_client) via POST /api/auth/game-token -- see
+  // docs/api/game-token-spec.md. Reuses JWT_SECRET to sign, so no separate
+  // signing key is configured here.
+  gameClientSecret: process.env.GAME_CLIENT_SECRET || '',
+  gameTokenExpiresIn: process.env.GAME_TOKEN_EXPIRES_IN || '24h',
 };

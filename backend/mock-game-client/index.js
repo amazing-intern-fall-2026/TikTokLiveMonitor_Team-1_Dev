@@ -8,19 +8,24 @@
 // cutscene) and rejecting an otherwise-valid command with status
 // REJECTED -- see REJECT_PROBABILITY below to tune or disable this.
 //
-// Usage: node index.js [serverUrl]  (default http://localhost:5000)
-//        GAME_TOKEN=<jwt> node index.js   (gửi kèm nếu backend đã bật xác
-//        thực /game theo docs/api/game-token-spec.md -- xem README.md,
-//        mục "Về xác thực token", TÍNH ĐẾN 25/09/2026 backend CHƯA bắt
-//        buộc token này, gửi hay không gửi đều connect được).
+// Usage: GAME_TOKEN=<jwt from POST /api/auth/game-token> node index.js
+// [serverUrl] (default http://localhost:5000). NFR-SEC-02: /game now
+// rejects the handshake without a valid game_client token -- see
+// docs/api/game-token-spec.md.
 
 const { io } = require('socket.io-client');
 
 const SERVER_URL = process.argv[2] || 'http://localhost:5000';
-const GAME_TOKEN = process.env.GAME_TOKEN || undefined;
+const GAME_TOKEN = process.env.GAME_TOKEN || '';
+
+if (!GAME_TOKEN) {
+  console.warn('[mock-game-client] GAME_TOKEN env var not set -- handshake will be rejected (MISSING_TOKEN). ' +
+    'Get one via POST /api/auth/game-token with your GAME_CLIENT_SECRET.');
+}
+
 const socket = io(`${SERVER_URL}/game`, {
   transports: ['websocket'],
-  auth: GAME_TOKEN ? { token: GAME_TOKEN } : undefined,
+  auth: { token: GAME_TOKEN },
 });
 
 // Giả lập nhân vật đôi lúc đang chết/cutscene, không nhận hiệu ứng được.
@@ -68,11 +73,11 @@ socket.on('disconnect', (reason) => {
   console.log(`[mock-game-client] disconnected: ${reason}`);
 });
 
-// Xem docs/api/game-token-spec.md mục 4 -- khi backend bật xác thực,
-// handshake bị từ chối sẽ báo lỗi ở đây (MISSING_TOKEN / WRONG_ROLE /
-// INVALID_OR_EXPIRED_TOKEN) thay vì bắn 'connect'.
+// Xem docs/api/game-token-spec.md mục 4 -- handshake bị từ chối sẽ báo
+// lỗi ở đây (MISSING_TOKEN / WRONG_ROLE / INVALID_OR_EXPIRED_TOKEN)
+// thay vì bắn 'connect'.
 socket.on('connect_error', (err) => {
-  console.error(`[mock-game-client] connect_error: ${err.message}`);
+  console.error(`[mock-game-client] connection rejected: ${err.message}`);
 });
 
 socket.on('EFFECT_COMMAND', (command) => handleCommand('EFFECT_COMMAND', command));
