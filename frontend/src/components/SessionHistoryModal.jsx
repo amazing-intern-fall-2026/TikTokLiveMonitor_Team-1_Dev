@@ -8,6 +8,7 @@ import { api } from '../services/api';
 const PAGE_SIZE = 10;
 
 export default function SessionHistoryModal({ onClose }) {
+  const [retry, setRetry] = useState(0);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ sessions: [], total: 0, totalPages: 1 });
   const [isLoading, setIsLoading] = useState(true);
@@ -16,8 +17,6 @@ export default function SessionHistoryModal({ onClose }) {
 
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    setErrorMessage('');
     api
       .getSessions({ page, pageSize: PAGE_SIZE })
       .then((result) => {
@@ -32,7 +31,14 @@ export default function SessionHistoryModal({ onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [page]);
+  }, [page, retry]);
+
+  const loadPage = (nextPage) => {
+    setIsLoading(true);
+    setErrorMessage('');
+    setPage(nextPage);
+    setRetry((value) => value + 1);
+  };
 
   const handleDownload = async (sessionId) => {
     setDownloadingId(sessionId);
@@ -55,11 +61,11 @@ export default function SessionHistoryModal({ onClose }) {
           </button>
         </div>
 
-        {errorMessage && <div className="alert alert-error">{errorMessage}</div>}
+        {errorMessage && <div role="alert" className="alert alert-error">{errorMessage} <button className="btn btn-sm" onClick={() => loadPage(page)}>Thử lại</button></div>}
 
         {isLoading ? (
           <div className="empty-state">Đang tải...</div>
-        ) : data.sessions.length === 0 ? (
+        ) : errorMessage ? null : data.sessions.length === 0 ? (
           <div className="empty-state">Chưa có phiên nào đã đóng</div>
         ) : (
           <div className="session-history-table-wrap">
@@ -104,7 +110,7 @@ export default function SessionHistoryModal({ onClose }) {
 
         {data.totalPages > 1 && (
           <div className="session-history-pagination">
-            <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => loadPage(page - 1)}>
               ← Trước
             </button>
             <span>
@@ -113,7 +119,7 @@ export default function SessionHistoryModal({ onClose }) {
             <button
               className="btn btn-sm btn-outline"
               disabled={page >= data.totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => loadPage(page + 1)}
             >
               Sau →
             </button>

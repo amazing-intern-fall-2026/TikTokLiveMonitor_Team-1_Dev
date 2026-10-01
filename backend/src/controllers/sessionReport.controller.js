@@ -42,13 +42,26 @@ const CSV_FIELDS = [
 
 function csvEscape(value) {
   const str = value === null || value === undefined ? '' : String(value);
-  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
-/** effects_triggered/top_contributors are JSONB arrays/objects -- flattened into one CSV cell each as JSON text, same as the JSON export just re-encoded per field. generated_at is a Date (from pg), not JSONB -- written as ISO 8601 instead of Date's locale-dependent toString(). */
+/** effects_triggered/top_contributors are JSONB arrays/objects -- flattened into one CSV cell each as JSON text, with contributor identity removed in the CSV export. generated_at is a Date (from pg), not JSONB -- written as ISO 8601 instead of Date's locale-dependent toString(). */
+// Export only ranks and numeric totals. Never serialize stored identity fields,
+// including identifiers added to legacy reports or future JSONB schemas.
+function exportContributors(value) {
+  const ranks = (rows, field) => (Array.isArray(rows) ? rows : []).map((row, index) => ({
+    rank: index + 1,
+    [field]: Number.isFinite(Number(row?.[field])) ? Number(row[field]) : 0,
+  }));
+  return {
+    topGifters: ranks(value?.topGifters, 'total_diamonds'),
+    topCommenters: ranks(value?.topCommenters, 'comment_count'),
+  };
+}
+
 function reportToCsv(report) {
   const row = CSV_FIELDS.map((field) => {
-    const value = report[field];
+    const value = field === 'top_contributors' ? exportContributors(report[field]) : report[field];
     if (value instanceof Date) {
       return value.toISOString();
     }
@@ -76,4 +89,4 @@ async function exportBySessionId(req, res) {
   res.status(400).json({ message: `Unsupported format "${format}" -- use "json" or "csv"` });
 }
 
-module.exports = { listSessions, getBySessionId, exportBySessionId };
+module.exports = { listSessions, getBySessionId, exportBySessionId, reportToCsv };

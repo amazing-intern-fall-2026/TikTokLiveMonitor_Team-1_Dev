@@ -1124,3 +1124,5 @@ select:focus {
   gap: 16px;
   flex-shrink: 0;
 }
+
+.dot-ended { background: #94a3b8; }

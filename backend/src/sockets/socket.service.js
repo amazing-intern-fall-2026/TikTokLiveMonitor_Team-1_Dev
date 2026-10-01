@@ -1,5 +1,15 @@
 let monitorNamespace;
 let gameNamespace;
+let liveStatus = { status: 'DISCONNECTED', username: null };
+
+function publishLiveStatus(status, username, message = '') {
+  liveStatus = { status, username, message };
+  broadcastEvent('LIVE_STATUS', liveStatus);
+}
+
+function getLiveStatus() {
+  return liveStatus;
+}
 
 /**
  * Splits the single Socket.IO server into two independent namespaces so a
@@ -31,6 +41,8 @@ function broadcastGameCommand(event, data) {
 
 module.exports = {
   initializeSocket,
+  publishLiveStatus,
+  getLiveStatus,
   broadcastEvent,
   broadcastGameCommand,
 };
