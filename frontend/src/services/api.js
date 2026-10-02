@@ -54,7 +54,10 @@ export const api = {
   // 401 ở ĐÂY nghĩa là "sai mật khẩu" (hiển thị trong form), khác hẳn 401 ở
   // mọi chỗ khác (nghĩa là "phiên hết hạn, về Login").
   login: async (username, password) => {
-    const res = await fetch(`${BACKEND_URL}/api/login`, {
+    // Cũ (giữ lại): backend không có route /api/login -> 404 "Route not found".
+    // const res = await fetch(`${BACKEND_URL}/api/login`, {
+    // Sửa: backend mount login tại /api/auth/login (auth.routes.js).
+    const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
