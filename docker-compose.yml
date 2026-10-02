@@ -50,6 +50,10 @@ services:
       - GAME_TOKEN_EXPIRES_IN=${GAME_TOKEN_EXPIRES_IN:-24h}
       # NFR-SEC-04: days of per-viewer data kept by the daily retention job (0 = disabled).
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      # Browser origins allowed by CORS (REST + Socket.IO); must include the frontend URL below.
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      - AUTH_MAX_FAILURES=${AUTH_MAX_FAILURES:-5}
+      - AUTH_LOCKOUT_MINUTES=${AUTH_LOCKOUT_MINUTES:-15}
       # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
       - LOG_LEVEL=info
     depends_on:

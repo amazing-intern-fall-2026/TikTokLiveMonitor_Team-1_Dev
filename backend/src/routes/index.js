@@ -22,6 +22,8 @@ router.use('/sessions', sessionReportRoutes);
 router.use('/rules', ruleRoutes);
 router.use('/auth', authRoutes);
 
-router.use('/rules', require('./rule.routes'));
+// [CLAUDE EDIT 2026-10-02] Code gốc của hao (3c140b4), giữ lại để tham khảo.
+// Lý do sửa: trùng với router.use('/rules', ruleRoutes) ở trên (cùng router, mount 2 lần).
+// router.use('/rules', require('./rule.routes'));
 
 module.exports = router;

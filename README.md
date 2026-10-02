@@ -47,6 +47,13 @@ Compose dựng cả 3 service và đợi theo thứ tự nhờ healthcheck:
 - **`VITE_BACKEND_URL`** được nhúng vào bundle frontend lúc build (trình duyệt gọi backend trực tiếp);
   đổi giá trị thì chạy lại với `--build`.
 - `EULER_API_KEY` (tùy chọn) nâng giới hạn ký WebSocket TikTok so với pool ẩn danh.
+- **`CORS_ORIGINS`**: những origin trình duyệt được gọi backend (REST + Socket.IO). Mặc định là
+  `http://localhost:5173,http://127.0.0.1:5173`. Nếu mở dashboard/overlay từ máy khác hoặc cổng
+  khác thì thêm origin đó, nếu không trình duyệt sẽ chặn request. Game Client và script Node
+  không bị ảnh hưởng.
+- **Khoá đăng nhập**: một IP nhập sai `AUTH_MAX_FAILURES` lần (mặc định 5) vào `/api/auth/login`
+  hoặc `/api/auth/game-token` sẽ nhận 429 trong `AUTH_LOCKOUT_MINUTES` phút (mặc định 15), kể cả khi
+  sau đó nhập đúng. Muốn mở khoá ngay thì khởi động lại backend.
 - Xem log: `docker compose logs -f backend`. Dừng: `docker compose down`.
 
 ## Chạy thủ công (không Docker)
@@ -109,8 +116,15 @@ Compose dựng cả 3 service và đợi theo thứ tự nhờ healthcheck:
 
 ```bash
 cd backend
-npm test                     # unit test RuleEngine (node:test)
+npm test                     # unit test (node:test), không cần DB/TikTok
+npm run test:ac08            # AC-08 kill-switch/pause, cần backend đang chạy (xem dưới)
+cd ../frontend
+npx oxlint --deny-warnings   # CI coi warning là lỗi
+npm run build
 ```
+
+**CI** (`.github/workflows/ci.yml`) chạy trên mỗi push/PR vào `main`/`dev`. Có 3 job:
+`npm test` của backend, lint + build frontend, và nạp `schema.sql` + `seed.sql` vào Postgres 16.
 
 ### Benchmark NFR-PERF-01 và test AC-08
 

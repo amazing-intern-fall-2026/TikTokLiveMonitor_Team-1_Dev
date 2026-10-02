@@ -2,7 +2,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const app = require('./app');
-const { port } = require('./config/env');
+// [CLAUDE EDIT 2026-10-02] Thêm corsOrigins (code gốc: const { port } = require('./config/env');).
+const { port, corsOrigins } = require('./config/env');
 const { makeLogger } = require('./utils/logger');
 
 const registerSocketHandlers = require('./sockets/socket.handler');
@@ -16,10 +17,17 @@ const logger = makeLogger('server');
 
 const server = http.createServer(app);
 
+// [CLAUDE EDIT 2026-10-02] Code gốc của TaiXN (e365800), giữ lại để tham khảo.
+// Lý do sửa: origin '*' cho mọi trang web mở /monitor; dùng chung CORS_ORIGINS với REST (env.js).
+// const io = new Server(server, {
+//   cors: {
+//     origin: '*'
+//   }
+// });
 const io = new Server(server, {
   cors: {
-    origin: '*'
-  }
+    origin: corsOrigins,
+  },
 });
 
 initializeSocket(io);

@@ -1,3 +1,6 @@
+// [CLAUDE EDIT 2026-10-02] appUser.repository.js (NFR-SEC-04) dừng ngay khi thiếu pepper;
+// đặt giá trị test để file chạy được trong `npm test` (và CI) mà không cần .env.
+process.env.USER_ID_PEPPER = process.env.USER_ID_PEPPER || 'test-pepper-0123456789abcdef0123456789abcdef';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
@@ -49,7 +52,11 @@ test('LIVE drop publishes reconnecting; STREAM_END cancels retry and retains end
   assert.equal(sockets.getLiveStatus().status, 'ENDED');
   assert.equal(live.getCurrentSessionId(), null);
   assert.equal(current.calls, 1);
-  assert.equal(emitted.filter((item) => item.status === 'RECONNECTING').length, 1);
+  // [CLAUDE EDIT 2026-10-02] Code gốc của hao (aaf880c), giữ lại để tham khảo.
+  // Lý do sửa: `emitted` gom mọi event của /monitor; ROOM_STATUS (FR-08, 861203d) cũng mang
+  // status RECONNECTING nên đếm ra 2. Ý test là LIVE_STATUS RECONNECTING chỉ phát 1 lần.
+  // assert.equal(emitted.filter((item) => item.status === 'RECONNECTING').length, 1);
+  assert.equal(emitted.filter((item) => item.event === 'LIVE_STATUS' && item.status === 'RECONNECTING').length, 1);
 });
 
 test('explicit disconnect publishes DISCONNECTED without scheduling reconnect', async () => {

@@ -71,6 +71,28 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
   sang N4.
 - Kết luận BR-GF-01: `docs/status/br-gf-01-ket-luan.md`. Còn thiếu log LIVE thật.
 
+## N4: hardening, Rule API, test, CI — 02/10/2026
+
+- `npm test --prefix backend`: 52/52 pass (gồm cả `test-final-tasks.js`; 4 test mới cho rate limit).
+  Test LIVE drop đã sửa: lọc `LIVE_STATUS`, vì `ROOM_STATUS` (FR-08) cũng mang RECONNECTING.
+- Frontend: `npx oxlint --deny-warnings` cho 0 warning, 0 error; `npm run build` pass.
+- Chạy với backend + Postgres 16 thật (container tạm):
+  - CORS: origin `http://localhost:5173` nhận `Access-Control-Allow-Origin`; `http://evil.example`
+    không nhận (cả REST lẫn Socket.IO polling).
+  - Đăng nhập sai 5 lần → 401 ×5, lần 6 → 429 `Retry-After: 900`; sau đó nhập đúng vẫn 429.
+    `/api/auth/game-token` dùng bộ đếm riêng nên vẫn 200.
+  - Rule API theo spec: `GET` trả mảng; payload cũ của UI bị **400** (`condition.threshold must be an
+    object`) thay vì được lưu thành rule hỏng; `PATCH /:id/enable` 200, `/:id/toggle` cũ 404.
+  - Màn Quản lý rule trên trình duyệt (Vite dev):
+    - Form rule 1 hiện đúng seed (heal / EVENT_COUNT 3 / 30s / HEAL_HP / 10000). Code cũ hiện keyword
+      rỗng và DIAMOND_VALUE 1000.
+    - Sửa keyword + ngưỡng rồi Lưu → **cập nhật tại chỗ** (vẫn 4 rule, target/magnitude/durationMs
+      giữ nguyên). Code cũ luôn tạo rule mới.
+    - Tạo rule mới "SPEED_UP" → lưu đúng cấu trúc; 2 chat "go" từ 2 user → log
+      `Rule fired ... SPEED_UP`.
+    - Bỏ tick rule 2 → `is_active = false`, RuleEngine nạp lại còn 4 rule.
+- CI chưa chạy cho tới khi push (không chạy được GitHub Actions trên máy).
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

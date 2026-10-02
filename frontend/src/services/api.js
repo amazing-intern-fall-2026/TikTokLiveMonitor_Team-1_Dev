@@ -45,6 +45,8 @@ async function request(endpoint, options = {}) {
     }
     throw new Error(errorData.message || `Lỗi HTTP: ${res.status}`);
   }
+  // [CLAUDE EDIT 2026-10-02] 204 No Content (vd DELETE /api/rules/:id) không có body -> res.json() sẽ lỗi.
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -193,18 +195,42 @@ export const api = {
     }),
 
   // 3. Quản lý Rules (FR-21, FR-22)
-  getRules: () => request('/api/rules').then((res) => res.data),
+  // [CLAUDE EDIT 2026-10-02] Code gốc của hao (3c140b4), giữ lại để tham khảo.
+  // Lý do sửa: backend quay về API theo docs/api/rule-management-api-spec.md (rule.routes.js):
+  // trả thẳng mảng/rule (không bọc {success,data}), có PUT /:id để sửa, bật/tắt qua
+  // PATCH /:id/enable {enabled} thay cho /:id/toggle, DELETE trả 204.
+  // getRules: () => request('/api/rules').then((res) => res.data),
+  // createRule: (ruleData) =>
+  //   request('/api/rules', {
+  //     method: 'POST',
+  //     body: JSON.stringify(ruleData),
+  //   }).then((res) => res.data),
+  // toggleRule: (ruleId) =>
+  //   request(`/api/rules/${ruleId}/toggle`, {
+  //     method: 'PATCH',
+  //   }).then((res) => res.data),
+  // deleteRule: (ruleId) =>
+  //   request(`/api/rules/${ruleId}`, {
+  //     method: 'DELETE',
+  //   }).then((res) => res.data),
+  getRules: () => request('/api/rules'),
   createRule: (ruleData) =>
     request('/api/rules', {
       method: 'POST',
       body: JSON.stringify(ruleData),
-    }).then((res) => res.data),
-  toggleRule: (ruleId) =>
-    request(`/api/rules/${ruleId}/toggle`, {
+    }),
+  updateRule: (ruleId, ruleData) =>
+    request(`/api/rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(ruleData),
+    }),
+  setRuleEnabled: (ruleId, enabled) =>
+    request(`/api/rules/${ruleId}/enable`, {
       method: 'PATCH',
-    }).then((res) => res.data),
+      body: JSON.stringify({ enabled }),
+    }),
   deleteRule: (ruleId) =>
     request(`/api/rules/${ruleId}`, {
       method: 'DELETE',
-    }).then((res) => res.data),
+    }),
 };
