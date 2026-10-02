@@ -48,6 +48,8 @@ services:
       - GAME_CLIENT_SECRET=${GAME_CLIENT_SECRET:?GAME_CLIENT_SECRET must be set}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
       - GAME_TOKEN_EXPIRES_IN=${GAME_TOKEN_EXPIRES_IN:-24h}
+      # NFR-SEC-04: days of per-viewer data kept by the daily retention job (0 = disabled).
+      - RETENTION_DAYS=${RETENTION_DAYS:-30}
       # FR-40: set LOG_LEVEL=debug here to increase verbosity when troubleshooting.
       - LOG_LEVEL=info
     depends_on:

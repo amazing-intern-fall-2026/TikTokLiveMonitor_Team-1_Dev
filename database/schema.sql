@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX idx_events_session_id ON events(session_id, occurred_at);
 CREATE INDEX idx_events_app_user_id ON events(app_user_id);
 CREATE INDEX idx_events_type ON events(session_id, event_type);
+-- NFR-SEC-04: retention.service.js deletes events older than RETENTION_DAYS by occurred_at.
+CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON events(occurred_at);
 
 CREATE TABLE IF NOT EXISTS comment_payloads (
     event_id BIGINT PRIMARY KEY REFERENCES events(id),
@@ -194,6 +196,8 @@ CREATE TABLE IF NOT EXISTS raw_live_events (
 );
 CREATE INDEX idx_raw_live_events_session_id ON raw_live_events(session_id);
 CREATE INDEX idx_raw_live_events_event_type ON raw_live_events(event_type);
+-- NFR-SEC-04: retention.service.js deletes raw events older than RETENTION_DAYS by received_at.
+CREATE INDEX IF NOT EXISTS idx_raw_live_events_received_at ON raw_live_events(received_at);
 
 -- One flat, denormalized row per closed session, purpose-built for
 -- cross-session analytics queries (e.g. "average comments/min by streamer")

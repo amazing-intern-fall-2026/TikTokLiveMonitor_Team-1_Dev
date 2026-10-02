@@ -32,6 +32,22 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
 - `npm test --prefix backend`: 25/25 pass.
 - Không phát sinh bug cần sửa. Đo trên localhost, chưa có TikTok LIVE thật.
 
+## NFR-SEC-04: raw payload, migration, retention — 02/10/2026
+
+- `npm test --prefix backend`: 35/35 pass. Có 10 test mới trong `test/retention.test.js` cho
+  sanitizer và thứ tự xoá/batch của retention.
+- Chạy trên Postgres 16 thật (container tạm, `schema.sql` + `seed.sql`) với fixture mô phỏng dữ liệu
+  cũ. Fixture gồm: 2 app_users plaintext, trong đó 1 user trùng với một dòng đã hash; raw payload
+  plaintext; event/effect/report 40 ngày tuổi và 1–2 ngày tuổi.
+  - Migration `--dry-run` báo 2 raw + 2 app_users và không đổi gì. Chạy thật: 2 raw đã migrate,
+    1 user hash tại chỗ, 1 user được gộp (event trỏ sang dòng hash, giữ first_seen sớm nhất và
+    last_seen muộn nhất). Chạy lại báo 0/0. Không còn userId/@handle gốc trong `raw_live_events`.
+  - `runRetention({ days: 30, batchSize: 2 })`: xoá 3 event cũ (qua 2 lô) cùng payload, 1 raw, 1
+    app_user. Effect log cũ còn nhưng `event_id = NULL` và đã bỏ `topContributor`. Báo cáo phiên
+    cũ còn số liệu, `top_contributors = {}`. Dữ liệu mới không bị đụng. Chạy lần 2 báo 0 ở mọi bước.
+- Khởi động server: `RETENTION_DAYS=30` thì lên lịch job, `0` thì log cảnh báo đã tắt, `abc` thì log
+  lỗi và không chạy job.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

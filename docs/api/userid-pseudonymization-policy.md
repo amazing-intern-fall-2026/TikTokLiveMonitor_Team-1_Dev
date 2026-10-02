@@ -13,6 +13,14 @@ thế bước đó)
 > DB đã ẩn danh hoặc toàn hệ thống tuân thủ pháp luật. Căn cứ NĐ 13 trong
 > tài liệu cần rà soát lại theo NĐ 356/2025 thay thế.
 
+> Cập nhật 02/10/2026: HMAC đã có trong `bulkUpsert` (commit d7d4db7).
+> `raw_live_events` nay chỉ lưu `user.userIdHash`
+> (`rawLiveEvent.repository.js`). Job retention của mục 4.3 đã chạy
+> (`retention.service.js`, `RETENTION_DAYS`, mặc định 30 ngày). Dữ liệu cũ
+> được migrate bằng `backend/scripts/pseudonymize-existing-data.js`.
+> `username`/`nickname` (mục 3) vẫn lưu plaintext trong `app_users` tối đa
+> `RETENTION_DAYS` ngày và vẫn chờ Pháp chế quyết định.
+
 ## 1. Vấn đề cần giải quyết
 
 `tiktok_user_id` (định danh nội bộ TikTok của khán giả) hiện đang lưu

@@ -87,6 +87,24 @@ Compose dựng cả 3 service và đợi theo thứ tự nhờ healthcheck:
   [docs/api/game-integration-guide.md](docs/api/game-integration-guide.md).
 - Giả lập Game Client: `GAME_TOKEN=<jwt> node backend/mock-game-client.js`.
 
+## Bảo vệ dữ liệu người xem (NFR-SEC-04)
+
+- `tiktok_user_id` lưu dạng HMAC-SHA256 (`USER_ID_PEPPER`). `raw_live_events` chỉ giữ
+  `user.userIdHash` (cùng hash, nối được với `app_users`), không lưu userId/@handle/nickname gốc.
+- **Retention**: job chạy mỗi ngày (lần đầu 1 phút sau khi khởi động) xoá `events` + payload,
+  `raw_live_events` và `app_users` không còn event, quá `RETENTION_DAYS` ngày (mặc định 30, `0` = tắt).
+  Effect log và báo cáo phiên được giữ lại nhưng xoá tên người xem (`topContributor`,
+  `top_contributors`). Kết quả mỗi lần chạy ghi ở log `[retention]`.
+- **DB tạo trước 02/10/2026** còn dữ liệu gốc: backup rồi chạy migration một lần (cùng
+  `USER_ID_PEPPER` với backend; chạy lại an toàn, không đảo ngược được):
+
+  ```bash
+  docker compose exec db pg_dump -U postgres tiktok_live_monitor > backup.sql
+  cd backend
+  node scripts/pseudonymize-existing-data.js --dry-run
+  node scripts/pseudonymize-existing-data.js
+  ```
+
 ## Kiểm thử
 
 ```bash

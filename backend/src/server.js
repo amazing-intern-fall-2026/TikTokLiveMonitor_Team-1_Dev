@@ -9,6 +9,7 @@ const registerSocketHandlers = require('./sockets/socket.handler');
 const { initializeSocket } = require('./sockets/socket.service');
 const ruleEngine = require('./services/RuleEngine.service');
 const eventBatch = require('./services/eventBatch.service');
+const retention = require('./services/retention.service');
 
 const logger = makeLogger('server');
 
@@ -24,6 +25,7 @@ initializeSocket(io);
 registerSocketHandlers(io);
 ruleEngine.init();
 eventBatch.init();
+retention.init();
 
 server.listen(port, () => {
   logger.info(`Server is running on http://localhost:${port}`);

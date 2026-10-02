@@ -31,4 +31,8 @@ module.exports = {
   // signing key is configured here.
   gameClientSecret: process.env.GAME_CLIENT_SECRET || '',
   gameTokenExpiresIn: process.env.GAME_TOKEN_EXPIRES_IN || '24h',
+  // NFR-SEC-04: max age (days) of per-viewer data before retention.service.js
+  // deletes/scrubs it. 0 disables the job. Raw string here; the service
+  // validates it so a typo is logged instead of silently keeping data forever.
+  retentionDays: process.env.RETENTION_DAYS ?? '30',
 };
