@@ -47,6 +47,13 @@ Compose dựng cả 3 service và đợi theo thứ tự nhờ healthcheck:
 - **`VITE_BACKEND_URL`** được nhúng vào bundle frontend lúc build (trình duyệt gọi backend trực tiếp);
   đổi giá trị thì chạy lại với `--build`.
 - `EULER_API_KEY` (tùy chọn) nâng giới hạn ký WebSocket TikTok so với pool ẩn danh.
+- **`CORS_ORIGINS`**: những origin trình duyệt được gọi backend (REST + Socket.IO). Mặc định là
+  `http://localhost:5173,http://127.0.0.1:5173`. Nếu mở dashboard/overlay từ máy khác hoặc cổng
+  khác thì thêm origin đó, nếu không trình duyệt sẽ chặn request. Game Client và script Node
+  không bị ảnh hưởng.
+- **Khoá đăng nhập**: một IP nhập sai `AUTH_MAX_FAILURES` lần (mặc định 5) vào `/api/auth/login`
+  hoặc `/api/auth/game-token` sẽ nhận 429 trong `AUTH_LOCKOUT_MINUTES` phút (mặc định 15), kể cả khi
+  sau đó nhập đúng. Muốn mở khoá ngay thì khởi động lại backend.
 - Xem log: `docker compose logs -f backend`. Dừng: `docker compose down`.
 
 ## Chạy thủ công (không Docker)
@@ -87,12 +94,41 @@ Compose dựng cả 3 service và đợi theo thứ tự nhờ healthcheck:
   [docs/api/game-integration-guide.md](docs/api/game-integration-guide.md).
 - Giả lập Game Client: `GAME_TOKEN=<jwt> node backend/mock-game-client.js`.
 
+## Bảo vệ dữ liệu người xem (NFR-SEC-04)
+
+- `tiktok_user_id` lưu dạng HMAC-SHA256 (`USER_ID_PEPPER`). `raw_live_events` chỉ giữ
+  `user.userIdHash` (cùng hash, nối được với `app_users`), không lưu userId/@handle/nickname gốc.
+- **Retention**: job chạy mỗi ngày (lần đầu 1 phút sau khi khởi động) xoá `events` + payload,
+  `raw_live_events` và `app_users` không còn event, quá `RETENTION_DAYS` ngày (mặc định 30, `0` = tắt).
+  Effect log và báo cáo phiên được giữ lại nhưng xoá tên người xem (`topContributor`,
+  `top_contributors`). Kết quả mỗi lần chạy ghi ở log `[retention]`.
+- **DB tạo trước 02/10/2026** còn dữ liệu gốc: backup rồi chạy migration một lần (cùng
+  `USER_ID_PEPPER` với backend; chạy lại an toàn, không đảo ngược được):
+
+  ```bash
+  docker compose exec db pg_dump -U postgres tiktok_live_monitor > backup.sql
+  cd backend
+  node scripts/pseudonymize-existing-data.js --dry-run
+  node scripts/pseudonymize-existing-data.js
+  ```
+
 ## Kiểm thử
 
 ```bash
 cd backend
-npm test                     # unit test RuleEngine (node:test)
+npm test                     # unit test (node:test), không cần DB/TikTok
+npm run test:ac08            # AC-08 kill-switch/pause, cần backend đang chạy (xem dưới)
+cd ../frontend
+npx oxlint --deny-warnings   # CI coi warning là lỗi
+npm run build
 ```
+
+**E2E** (Playwright, cần stack đang chạy và `npm ci` ở thư mục gốc): `final-states.spec.js` cần cổng 5000
+trống (nó tự dựng socket server giả, hãy `docker compose stop backend`); `full-flow.spec.js` cần backend thật,
+xem [docs/demo/final-demo.md](docs/demo/final-demo.md).
+
+**CI** (`.github/workflows/ci.yml`) chạy trên mỗi push/PR vào `main`/`dev`. Có 3 job:
+`npm test` của backend, lint + build frontend, và nạp `schema.sql` + `seed.sql` vào Postgres 16.
 
 ### Benchmark NFR-PERF-01 và test AC-08
 
@@ -117,6 +153,8 @@ truyền `--p95-ms` đúng theo SRS. Thoát code 0 nếu mọi kiểm tra đạt
 
 ## Demo cuối và nghiệm thu
 
+- [Ghi chú phát hành v1.0](docs/release-notes-v1.0.md): giới hạn đã biết, việc còn lại, cách triển khai an toàn
+- [Bảng trạng thái FR/BR/NFR (bản cuối)](docs/status/fr-br-status-cuoi-v1.0.md)
 - [Kịch bản demo](docs/demo/final-demo.md)
 - [Rà soát bảo mật CSV](docs/demo/csv-security-review.md)
 - [Kết quả kiểm tra](docs/demo/verification.md)

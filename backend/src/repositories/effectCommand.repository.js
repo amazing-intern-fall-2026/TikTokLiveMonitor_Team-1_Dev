@@ -35,4 +35,43 @@ function findByCommandId(commandId) {
     .then((result) => result.rows[0]);
 }
 
-module.exports = { create, findByCommandId, findBySessionId };
+/**
+ * BR-EFF-03: moves a command to the Game's reported outcome (APPLIED |
+ * REJECTED | EXPIRED). Only from SENT or NO_ACK: the first ack wins over a
+ * duplicate, and a late ack still corrects an earlier NO_ACK timeout (the
+ * Game is the source of truth for what actually ran). Resolves to the
+ * updated row, or undefined if the status was already final.
+ */
+function updateStatusFromAck(id, status) {
+  return db
+    .query(
+      `UPDATE effect_commands SET status = $2
+       WHERE id = $1 AND status IN ('SENT', 'NO_ACK')
+       RETURNING *`,
+      [id, status]
+    )
+    .then((result) => result.rows[0]);
+}
+
+/**
+ * BR-EFF-03: marks SENT commands the Game never acked as NO_ACK once their
+ * deadline has passed -- expiresAt (5s after issue) for an EFFECT_COMMAND,
+ * sent_at + 5s for a CLEAR_ALL_EFFECTS (it has no expiresAt) -- plus
+ * `graceMs` for the ack's own trip back. Optionally scoped to one session
+ * (used right before that session's report is generated). Resolves to the
+ * number of rows changed.
+ */
+function markUnackedAsNoAck({ graceMs, sessionId = null }) {
+  return db
+    .query(
+      `UPDATE effect_commands SET status = 'NO_ACK'
+       WHERE status = 'SENT'
+         AND ($2::int IS NULL OR session_id = $2)
+         AND COALESCE((payload->>'expiresAt')::timestamptz, sent_at::timestamptz + interval '5 seconds')
+             < NOW() - make_interval(secs => $1::double precision / 1000)`,
+      [graceMs, sessionId]
+    )
+    .then((result) => result.rowCount);
+}
+
+module.exports = { create, findByCommandId, findBySessionId, updateStatusFromAck, markUnackedAsNoAck };

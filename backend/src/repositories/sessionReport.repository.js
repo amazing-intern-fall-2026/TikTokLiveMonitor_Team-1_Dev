@@ -51,10 +51,28 @@ function findSessionWithStream(sessionId) {
     .then((result) => result.rows[0]);
 }
 
-/** FR-36: event counts by type for one session. */
+// [CLAUDE EDIT 2026-10-02] Code gốc của TaiXN (7462a24), giữ lại để tham khảo.
+// Lý do sửa: mỗi tick combo trung gian (repeat_end = FALSE) cũng là 1 dòng events GIFT, nên
+// total_gifts đếm 1 combo 10 quà thành ~11 "quà" (BR-GF-01). sumDiamonds/topGifters đã lọc
+// repeat_end = TRUE từ trước; giờ total_gifts cũng chỉ đếm quà đã chốt.
+// /** FR-36: event counts by type for one session. */
+// function countEventsByType(sessionId) {
+//   return db
+//     .query('SELECT event_type, COUNT(*) AS count FROM events WHERE session_id = $1 GROUP BY event_type', [sessionId])
+//     .then((result) => result.rows);
+// }
+
+/** FR-36: event counts by type for one session; GIFT counts only finished gifts/streaks (BR-GF-01). */
 function countEventsByType(sessionId) {
   return db
-    .query('SELECT event_type, COUNT(*) AS count FROM events WHERE session_id = $1 GROUP BY event_type', [sessionId])
+    .query(
+      `SELECT e.event_type, COUNT(*) AS count
+       FROM events e
+       LEFT JOIN gift_payloads gp ON gp.event_id = e.id
+       WHERE e.session_id = $1 AND (e.event_type <> 'GIFT' OR gp.repeat_end IS NOT FALSE)
+       GROUP BY e.event_type`,
+      [sessionId]
+    )
     .then((result) => result.rows);
 }
 

@@ -32,6 +32,133 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
 - `npm test --prefix backend`: 25/25 pass.
 - Không phát sinh bug cần sửa. Đo trên localhost, chưa có TikTok LIVE thật.
 
+## NFR-SEC-04: raw payload, migration, retention — 02/10/2026
+
+- `npm test --prefix backend`: 35/35 pass. Có 10 test mới trong `test/retention.test.js` cho
+  sanitizer và thứ tự xoá/batch của retention.
+- Chạy trên Postgres 16 thật (container tạm, `schema.sql` + `seed.sql`) với fixture mô phỏng dữ liệu
+  cũ. Fixture gồm: 2 app_users plaintext, trong đó 1 user trùng với một dòng đã hash; raw payload
+  plaintext; event/effect/report 40 ngày tuổi và 1–2 ngày tuổi.
+  - Migration `--dry-run` báo 2 raw + 2 app_users và không đổi gì. Chạy thật: 2 raw đã migrate,
+    1 user hash tại chỗ, 1 user được gộp (event trỏ sang dòng hash, giữ first_seen sớm nhất và
+    last_seen muộn nhất). Chạy lại báo 0/0. Không còn userId/@handle gốc trong `raw_live_events`.
+  - `runRetention({ days: 30, batchSize: 2 })`: xoá 3 event cũ (qua 2 lô) cùng payload, 1 raw, 1
+    app_user. Effect log cũ còn nhưng `event_id = NULL` và đã bỏ `topContributor`. Báo cáo phiên
+    cũ còn số liệu, `top_contributors = {}`. Dữ liệu mới không bị đụng. Chạy lần 2 báo 0 ở mọi bước.
+- Khởi động server: `RETENTION_DAYS=30` thì lên lịch job, `0` thì log cảnh báo đã tắt, `abc` thì log
+  lỗi và không chạy job.
+
+## BR-EFF-03: trạng thái effect theo ACK, BR-GF-01 — 02/10/2026
+
+- `npm test --prefix backend`: 44/44 pass. Có 9 test mới trong `test/effectAck.test.js`.
+- Chạy với backend + Postgres 16 thật (container tạm) và một game client giả lập. Client ack lần
+  lượt APPLIED, REJECTED, EXPIRED, không ack, và ack APPLIED cho kill-switch:
+
+  | Lệnh | Ack của Game | `effect_commands.status` | Dòng `effect_acks` |
+  |---|---|---|---|
+  | EFFECT 1 | APPLIED (ngay lập tức), sau đó ack trùng REJECTED | APPLIED (giữ ack đầu) | 2 |
+  | EFFECT 2 | REJECTED, sau đó ack status lạ `ACKED` | REJECTED (`ACKED` bị bỏ qua) | 1 |
+  | EFFECT 3 | EXPIRED | EXPIRED | 1 |
+  | EFFECT 4 | không ack | NO_ACK (sweep ~10 giây sau `expiresAt`) | 0 |
+  | CLEAR_ALL_EFFECTS | APPLIED | APPLIED | 1 |
+
+  Log backend không có dòng `No effect_commands row found`: ack về ngay sau broadcast vẫn khớp được.
+- `generateReport` trên fixture (combo Rose ×3 = 2 tick + 1 event chốt, 1 Lion, 2 chat, 1 effect quá
+  hạn chưa ack): `total_gifts` = 2 (code cũ ra 4), `total_diamonds` = 103, effect quá hạn hiện
+  `NO_ACK` trong `effects_triggered`.
+- `node --test backend/test-final-tasks.js` (cần `USER_ID_PEPPER`): 3/4. Test "LIVE drop publishes
+  reconnecting…" fail (`2 !== 1`) **cả trên code trước thay đổi này**, nên không phải do N3. Chuyển
+  sang N4.
+- Kết luận BR-GF-01: `docs/status/br-gf-01-ket-luan.md`. Còn thiếu log LIVE thật.
+
+## N4: hardening, Rule API, test, CI — 02/10/2026
+
+- `npm test --prefix backend`: 52/52 pass (gồm cả `test-final-tasks.js`; 4 test mới cho rate limit).
+  Test LIVE drop đã sửa: lọc `LIVE_STATUS`, vì `ROOM_STATUS` (FR-08) cũng mang RECONNECTING.
+- Frontend: `npx oxlint --deny-warnings` cho 0 warning, 0 error; `npm run build` pass.
+- Chạy với backend + Postgres 16 thật (container tạm):
+  - CORS: origin `http://localhost:5173` nhận `Access-Control-Allow-Origin`; `http://evil.example`
+    không nhận (cả REST lẫn Socket.IO polling).
+  - Đăng nhập sai 5 lần → 401 ×5, lần 6 → 429 `Retry-After: 900`; sau đó nhập đúng vẫn 429.
+    `/api/auth/game-token` dùng bộ đếm riêng nên vẫn 200.
+  - Rule API theo spec: `GET` trả mảng; payload cũ của UI bị **400** (`condition.threshold must be an
+    object`) thay vì được lưu thành rule hỏng; `PATCH /:id/enable` 200, `/:id/toggle` cũ 404.
+  - Màn Quản lý rule trên trình duyệt (Vite dev):
+    - Form rule 1 hiện đúng seed (heal / EVENT_COUNT 3 / 30s / HEAL_HP / 10000). Code cũ hiện keyword
+      rỗng và DIAMOND_VALUE 1000.
+    - Sửa keyword + ngưỡng rồi Lưu → **cập nhật tại chỗ** (vẫn 4 rule, target/magnitude/durationMs
+      giữ nguyên). Code cũ luôn tạo rule mới.
+    - Tạo rule mới "SPEED_UP" → lưu đúng cấu trúc; 2 chat "go" từ 2 user → log
+      `Rule fired ... SPEED_UP`.
+    - Bỏ tick rule 2 → `is_active = false`, RuleEngine nạp lại còn 4 rule.
+- CI chưa chạy cho tới khi push (không chạy được GitHub Actions trên máy).
+
+## N5: Effect log và chỉ số theo phút trên Dashboard (BR-EFF-03, FR-17) — 02/10/2026
+
+- `npm test --prefix backend`: 60/60 pass (8 test mới cho `effectLog.service`). `npx oxlint --deny-warnings`
+  cho frontend: 0 warning; `npm run build` pass.
+- Chạy end-to-end: backend + Postgres 16 thật, game client giả (ack theo từng effect), dashboard trên
+  trình duyệt. Bắn 4 rule bằng mock event:
+
+  | Effect | Game phản hồi | Trạng thái trên Dashboard | `effect_commands.status` |
+  |---|---|---|---|
+  | HEAL_HP | APPLIED | Đã áp dụng | APPLIED |
+  | SLOW_DOWN | REJECTED "nhân vật đang chết" | Bị từ chối, kèm lý do | REJECTED |
+  | SHIELD | EXPIRED "đến trễ" | Hết hạn, kèm lý do | EXPIRED |
+  | POWER_UP | không ack | Không có ACK (sau ~10–15 giây) | NO_ACK |
+  | Kill Switch | APPLIED | 🚨 KILL SWITCH, Đã áp dụng | APPLIED |
+
+  Dashboard và DB khớp nhau từng dòng. Tải lại trang (F5) vẫn hiện đủ danh sách từ `EFFECT_HISTORY`.
+- Chỉ số theo phút: gửi 5 chat + 1 quà 300 💎 → "5 / phút" và "300 / phút". Sau 60 giây số này về
+  "0 / phút", tổng (5 và 300) giữ nguyên.
+- Layout ở viewport 1280×720: cột feed vẫn cao 141px như trước khi thêm (dải Effect đặt cùng hàng
+  với tab lọc, tốc độ đặt cùng hàng với số tổng).
+- Giới hạn: danh sách Effect lưu trong bộ nhớ backend (50 lệnh gần nhất), khởi động lại backend thì
+  mất. Lịch sử đầy đủ vẫn nằm ở `effect_commands`/`effect_acks` và báo cáo phiên. Tốc độ theo phút
+  tính theo thời điểm dashboard nhận event, nên một dashboard mới mở chỉ đếm từ lúc mở.
+
+## N6: nghiệm thu trên stack sạch — 02/10/2026
+
+Commit kiểm: `26e3054` (+ các sửa nhỏ của N6 bên dưới). Môi trường: Windows 11, Docker Desktop,
+`DB_PORT=5433` (cổng 5432 máy này đã có Postgres riêng). Lệnh: `docker compose down -v && docker compose up -d
+--build --wait`. Cả 3 service healthy; schema + seed tự nạp (4 rule, 1 live_stream); job retention được lên
+lịch; `CORS_ORIGINS` mặc định cho phép `http://localhost:5173`.
+
+| Hạng mục | Kết quả |
+|---|---|
+| `npm run bench` (NFR-PERF-01 + AC-08) | **16/16 pass**. Sự kiện → dashboard 300/300, p50 3 ms, p95 9 ms. Sự kiện → Game 40/40, p50 259 ms, p95 266 ms. Kill-switch → `CLEAR_ALL_EFFECTS` sau 7 ms |
+| `npm run test:ac08` | 8/8 pass |
+| `npm test --prefix backend` | 60/60 pass |
+| Token `/game` | không token → `MISSING_TOKEN`; role operator → `WRONG_ROLE`; sai chữ ký / hết hạn / rác → `INVALID_OR_EXPIRED_TOKEN`; token hợp lệ → kết nối |
+| `final-states.spec.js` (UI states) | **pass** (lần đầu thật sự chạy được). Dùng Microsoft Edge qua `channel: 'msedge'` vì máy chỉ có Chromium bản cũ của Playwright (1228, cần 1243) |
+| `full-flow.spec.js` (viết lại) | 3/3 pass, chạy 2 lần liên tiếp trên cùng backend. Có bước tải CSV thật (`E2E_EXPECT_SESSION=1`) |
+| Kết nối thật tới TikTok từ trong Docker | container ra được tiktok.com. `@zz_e2e_nolive_0000` → 404 "Không tìm thấy tài khoản" (1,1 s); `@tiktok` → 409 "hiện không phát trực tiếp" (1,7 s); handle sai định dạng → 400. Khớp FR-05 |
+
+**Báo cáo/CSV trên Postgres thật.** Chưa có LIVE thật nên không tạo được phiên bằng cách thông thường. Mình
+dựng một phiên bằng chính code backend (repository → AsyncEventBatcher → `generateReport`) trong container: 6
+chat, 2 join, combo Rose ×3 (2 tick + 1 chốt) và 1 Lion 500 💎.
+- Report: 6 comment, 2 join, **2 quà** (code trước N3 sẽ ra 4), 503 💎. Đúng.
+- `app_users.tiktok_user_id`: cả 2 dòng dài 64 ký tự hex (HMAC). `raw_live_events.raw_payload.user` chỉ có
+  `userIdHash`; tìm userId/handle/tên gốc trong raw payload và id: 0 kết quả.
+- `GET /api/sessions/1/export?format=csv` không token → 401; có token → 200, `attachment; filename="session-1-report.csv"`.
+  CSV chỉ có `rank` + số trong `top_contributors`, 0 chuỗi định danh. Tải qua nút CSV trong UI cho cùng nội dung.
+- Còn mở (đã ghi từ N2): `username`/`nickname` vẫn plaintext trong `app_users` tối đa `RETENTION_DAYS` ngày.
+
+**Lỗi phát hiện và sửa trong N6**
+1. `full-flow.spec.js` cũ không chạy được (mật khẩu `admin123`, `/game` không token, cần LIVE thật, nhiều assertion luôn đúng).
+   Đã viết lại; bản gốc của hào giữ dạng comment cuối file.
+2. Bản viết lại ban đầu có 2 lỗi test, đã sửa: handle test dài hơn 24 ký tự nên chỉ chạm bước kiểm tra
+   định dạng, chưa chạm connector; bước tải CSV bị bỏ qua vì kiểm tra nút khi modal còn "Đang tải...".
+   Lần chạy lại thứ hai còn lộ ra test phụ thuộc cooldown của rule seed và lịch sử cũ, nên giờ test tự tạo
+   rule riêng rồi xoá.
+3. Log `Connector error` ghi `"error":"[object Object]"` (connector phát `{ info, exception }`). Giờ ghi
+   `"info":"Error while connecting","error":"Failed to retrieve Room ID from all sources."`.
+
+**Chưa kiểm chứng được (cần người có LIVE thật):** feed từ phòng LIVE thật, quà combo thật (bảng ở
+`docs/status/br-gf-01-ket-luan.md`), đóng phiên thật và report của nó, reconnect khi mất mạng thật, host
+kết thúc LIVE thật, độ trễ qua mạng thật. `benchmark-effect-latency.js` (ở thư mục gốc) là bản cũ không gửi
+token `/game`, đã được `npm run bench` thay thế.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

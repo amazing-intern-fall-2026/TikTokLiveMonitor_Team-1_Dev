@@ -277,7 +277,16 @@ function registerEventHandlers(connection, uniqueId) {
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
-    logger.error('Connector error', { uniqueId, error: err.message || String(err) });
+    // [CLAUDE EDIT 2026-10-02] Code gốc của Hdat-th (b395768), giữ lại để tham khảo.
+    // Lý do sửa: connector phát ControlEvent.ERROR với { info, exception } (README connector), không phải
+    // Error, nên err.message rỗng và String(err) ra "[object Object]" -- log không nói lỗi gì.
+    // logger.error('Connector error', { uniqueId, error: err.message || String(err) });
+    const cause = err?.exception ?? err;
+    logger.error('Connector error', {
+      uniqueId,
+      info: err?.info,
+      error: cause?.message || (typeof cause === 'string' ? cause : JSON.stringify(cause)),
+    });
   });
 
   // Chat message -> broadcast as a COMMENT envelope on the 'CHAT' channel.
@@ -311,6 +320,10 @@ function registerEventHandlers(connection, uniqueId) {
       giftId: data.giftId ?? data.gift?.id,
       giftName: data.gift?.name,
       isStreakable: Boolean(data.gift?.combo),
+      // proto v3 Gift.type: the connector README's legacy giftDetails.giftType
+      // (1 = streakable). Logged next to combo so a real LIVE capture shows
+      // whether the two ever disagree (docs/status/br-gf-01-ket-luan.md).
+      giftType: data.gift?.type,
       repeatCount: data.repeatCount,
       repeatEnd: data.repeatEnd,
       repeatEndType: typeof data.repeatEnd,

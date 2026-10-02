@@ -1,6 +1,7 @@
 const sessionReportRepository = require('../repositories/sessionReport.repository');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const sessionAnalyticsSummaryRepository = require('../repositories/sessionAnalyticsSummary.repository');
+const effectAckService = require('./effectAck.service');
 const { makeLogger } = require('../utils/logger');
 
 const logger = makeLogger('sessionReport');
@@ -19,6 +20,13 @@ async function generateReport(sessionId) {
 
   const endedAt = session.disconnected_at ? new Date(session.disconnected_at) : new Date();
   const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - new Date(session.connected_at).getTime()) / 1000));
+
+  // BR-EFF-03: settle commands the Game never acked before they are copied
+  // into the report. Best-effort: a failed sweep only leaves them as SENT.
+  // Commands still within their ack window at close time also stay SENT.
+  await effectAckService.sweepUnacked(sessionId).catch((err) => {
+    logger.error('NO_ACK sweep before report failed', { sessionId, error: err.message });
+  });
 
   const [eventCounts, totalDiamonds, effectCommands, topGifters, topCommenters, uniqueViewers] = await Promise.all([
     sessionReportRepository.countEventsByType(sessionId),

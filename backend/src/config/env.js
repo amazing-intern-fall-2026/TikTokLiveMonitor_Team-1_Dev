@@ -31,4 +31,23 @@ module.exports = {
   // signing key is configured here.
   gameClientSecret: process.env.GAME_CLIENT_SECRET || '',
   gameTokenExpiresIn: process.env.GAME_TOKEN_EXPIRES_IN || '24h',
+  // NFR-SEC-04: max age (days) of per-viewer data before retention.service.js
+  // deletes/scrubs it. 0 disables the job. Raw string here; the service
+  // validates it so a typo is logged instead of silently keeping data forever.
+  retentionDays: process.env.RETENTION_DAYS ?? '30',
+  // Browser origins allowed to call the REST API and open Socket.IO from a
+  // page (the dashboard / OBS overlay). Comma-separated; '*' allows any.
+  // Non-browser clients (Game Client, scripts) send no Origin and are not
+  // affected -- they are gated by JWT instead.
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173'),
+  // Brute-force guard for POST /api/auth/login and /api/auth/game-token:
+  // after this many failed attempts from one IP within the window, further
+  // attempts get 429 until the window passes.
+  authMaxFailures: Number.parseInt(process.env.AUTH_MAX_FAILURES || '5', 10),
+  authLockoutMinutes: Number.parseInt(process.env.AUTH_LOCKOUT_MINUTES || '15', 10),
 };
+
+function parseCorsOrigins(raw) {
+  const origins = raw.split(',').map((origin) => origin.trim()).filter(Boolean);
+  return origins.includes('*') ? '*' : origins;
+}

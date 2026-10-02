@@ -1,5 +1,7 @@
 # Bảng trạng thái FR / BR / NFR sau Tuần 3 (cập nhật 28/09/2026)
 
+> **Bản cũ (Tuần 3).** Đã được thay bằng [fr-br-status-cuoi-v1.0.md](fr-br-status-cuoi-v1.0.md) (02/10/2026). Giữ lại để xem lịch sử; nhiều mục "Chưa làm"/"Partial" ở dưới nay đã xong.
+
 **Phạm vi & cách lập:** SRS gốc không nằm trong repo, nên bảng này chỉ gồm các
 mã yêu cầu **xuất hiện trong code, tài liệu và báo cáo tuần**, và trạng thái
 được xác định bằng cách đọc code trên `main` (+ nhánh này), không dựa vào lời

@@ -48,6 +48,12 @@ chiếu bảng trên với DB. Test fixture không thay thế nghiệm thu Postg
 - Số liệu/thời gian vẫn có khả năng bị liên kết với nguồn khác. Không gọi
   CSV này là bằng chứng ẩn danh tuyệt đối hoặc chứng nhận tuân thủ pháp luật.
 
+> Cập nhật 02/10/2026: đã xử lý ba gạch đầu dòng đầu tiên. HMAC có trong
+> `bulkUpsert`. Raw payload chỉ còn `userIdHash`, có migration cho dữ liệu
+> cũ. Retention xoá/làm sạch dữ liệu quá `RETENTION_DAYS` ngày (xem README,
+> mục Bảo vệ dữ liệu người xem). Vẫn còn mở: username/nickname plaintext
+> trong khung retention, các bản backup DB, và nghiệm thu pháp lý NFR-SEC-06.
+
 Bước tiếp theo: thống nhất giả danh ở tầng ghi DB (giữ map id gốc → id DB
 cho event batch), xử lý raw payload + migration dữ liệu cũ, retention cho
 các bảng liên quan và backup, rồi nghiệm thu pháp lý NFR-SEC-06.

@@ -5,6 +5,7 @@ const effectCommandRepository = require('../repositories/effectCommand.repositor
 const { broadcastEvent, broadcastGameCommand } = require('../sockets/socket.service');
 const { makeLogger } = require('../utils/logger');
 const eventDedup = require('./eventDedup.service');
+const effectLog = require('./effectLog.service');
 
 const logger = makeLogger('RuleEngine');
 
@@ -432,6 +433,7 @@ function dispatchNext() {
 }
 
 function logCommand(command, status, dbSessionId) {
+  effectLog.record(command, status); // dashboard Effect log (BR-EFF-03), before the best-effort DB write
   effectCommandRepository
     .create({ ruleId: command.ruleId, sessionId: dbSessionId, payload: command, status })
     .catch((err) => logger.error('Failed to log effect command', { error: err.message, commandId: command.commandId }));
