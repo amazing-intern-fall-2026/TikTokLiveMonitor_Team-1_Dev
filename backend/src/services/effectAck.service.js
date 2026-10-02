@@ -12,9 +12,18 @@ const logger = makeLogger('EffectAck');
  * in this codebase) -- an ack the backend fails to log must never affect
  * the live Socket.IO relay or crash anything.
  */
-async function recordAck({ commandId, status, reason }) {
-  if (!commandId || !status) {
-    logger.warn('Ignoring malformed ack (missing commandId/status)', { commandId, status });
+async function recordAck(ack) {
+  // Socket payloads are untrusted: validate before destructuring or updating
+  // either the dashboard log or Postgres.
+  if (!ack || typeof ack !== 'object' || Array.isArray(ack)) {
+    logger.warn('Ignoring malformed ack (expected an object)');
+    return;
+  }
+  const { commandId, status, reason } = ack;
+  if (typeof commandId !== 'string' || !commandId.trim() ||
+      typeof status !== 'string' ||
+      (reason !== undefined && typeof reason !== 'string')) {
+    logger.warn('Ignoring malformed ack (invalid commandId/status/reason)');
     return;
   }
   // [CLAUDE EDIT 2026-10-02] Thêm kiểm tra enum: contract v1.0 FROZEN chỉ cho APPLIED|REJECTED|EXPIRED.

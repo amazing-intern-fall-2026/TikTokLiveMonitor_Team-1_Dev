@@ -84,6 +84,31 @@ describe('effectAck.recordAck (BR-EFF-03)', () => {
     assert.equal(stubs.rows.c1.status, 'SENT');
   });
 
+  it('ignores null, absent, primitive and array payloads without rejecting', async () => {
+    for (const payload of [null, undefined, false, 42, 'ACK', [], ['c1', 'APPLIED']]) {
+      await assert.doesNotReject(() => service.recordAck(payload));
+    }
+    assert.equal(stubs.lookups, 0);
+    assert.equal(stubs.acks.length, 0);
+    assert.equal(stubs.rows.c1.status, 'SENT');
+  });
+
+  it('rejects wrong field types before looking up or changing a command', async () => {
+    for (const payload of [
+      { commandId: 1, status: 'APPLIED' },
+      { commandId: {}, status: 'APPLIED' },
+      { commandId: '   ', status: 'APPLIED' },
+      { commandId: 'c1', status: [] },
+      { commandId: 'c1', status: 'APPLIED', reason: {} },
+      { commandId: 'c1', status: 'APPLIED', reason: null },
+    ]) {
+      await assert.doesNotReject(() => service.recordAck(payload));
+    }
+    assert.equal(stubs.lookups, 0);
+    assert.equal(stubs.acks.length, 0);
+    assert.equal(stubs.rows.c1.status, 'SENT');
+  });
+
   it('retries the lookup when the ack arrives before the command row is inserted', async () => {
     loadService({ rows: { c1: { id: 11, status: 'SENT' } }, appearAfter: 2 });
     await service.recordAck({ commandId: 'c1', status: 'APPLIED' });

@@ -60,7 +60,9 @@ function registerSocketHandlers(io) {
     // BR-EFF-03: Game Client acks every EffectCommand/CLEAR_ALL_EFFECTS it
     // receives so the Monitor can show whether it actually got applied.
     socket.on('EFFECT_ACK', (ack) => {
-      effectAckService.recordAck(ack);
+      effectAckService.recordAck(ack).catch((err) => {
+        gameLog.error('Failed to handle EFFECT_ACK', { socketId: socket.id, error: err.message });
+      });
     });
 
     socket.on('disconnect', () => {
