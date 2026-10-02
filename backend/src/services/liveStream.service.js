@@ -311,6 +311,10 @@ function registerEventHandlers(connection, uniqueId) {
       giftId: data.giftId ?? data.gift?.id,
       giftName: data.gift?.name,
       isStreakable: Boolean(data.gift?.combo),
+      // proto v3 Gift.type: the connector README's legacy giftDetails.giftType
+      // (1 = streakable). Logged next to combo so a real LIVE capture shows
+      // whether the two ever disagree (docs/status/br-gf-01-ket-luan.md).
+      giftType: data.gift?.type,
       repeatCount: data.repeatCount,
       repeatEnd: data.repeatEnd,
       repeatEndType: typeof data.repeatEnd,

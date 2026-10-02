@@ -48,6 +48,29 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
 - Khởi động server: `RETENTION_DAYS=30` thì lên lịch job, `0` thì log cảnh báo đã tắt, `abc` thì log
   lỗi và không chạy job.
 
+## BR-EFF-03: trạng thái effect theo ACK, BR-GF-01 — 02/10/2026
+
+- `npm test --prefix backend`: 44/44 pass. Có 9 test mới trong `test/effectAck.test.js`.
+- Chạy với backend + Postgres 16 thật (container tạm) và một game client giả lập. Client ack lần
+  lượt APPLIED, REJECTED, EXPIRED, không ack, và ack APPLIED cho kill-switch:
+
+  | Lệnh | Ack của Game | `effect_commands.status` | Dòng `effect_acks` |
+  |---|---|---|---|
+  | EFFECT 1 | APPLIED (ngay lập tức), sau đó ack trùng REJECTED | APPLIED (giữ ack đầu) | 2 |
+  | EFFECT 2 | REJECTED, sau đó ack status lạ `ACKED` | REJECTED (`ACKED` bị bỏ qua) | 1 |
+  | EFFECT 3 | EXPIRED | EXPIRED | 1 |
+  | EFFECT 4 | không ack | NO_ACK (sweep ~10 giây sau `expiresAt`) | 0 |
+  | CLEAR_ALL_EFFECTS | APPLIED | APPLIED | 1 |
+
+  Log backend không có dòng `No effect_commands row found`: ack về ngay sau broadcast vẫn khớp được.
+- `generateReport` trên fixture (combo Rose ×3 = 2 tick + 1 event chốt, 1 Lion, 2 chat, 1 effect quá
+  hạn chưa ack): `total_gifts` = 2 (code cũ ra 4), `total_diamonds` = 103, effect quá hạn hiện
+  `NO_ACK` trong `effects_triggered`.
+- `node --test backend/test-final-tasks.js` (cần `USER_ID_PEPPER`): 3/4. Test "LIVE drop publishes
+  reconnecting…" fail (`2 !== 1`) **cả trên code trước thay đổi này**, nên không phải do N3. Chuyển
+  sang N4.
+- Kết luận BR-GF-01: `docs/status/br-gf-01-ket-luan.md`. Còn thiếu log LIVE thật.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

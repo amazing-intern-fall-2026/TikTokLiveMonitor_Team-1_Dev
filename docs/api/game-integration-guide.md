@@ -339,6 +339,17 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 được ghi) và ack cho `CLEAR_ALL_EFFECTS` do Operator bấm thủ công
 (`rule_id` là `NULL`).
 
+**Cập nhật 02/10/2026:** ack nay còn cập nhật `effect_commands.status`
+(`SENT` → `APPLIED`/`REJECTED`/`EXPIRED`), và trạng thái này được đưa vào
+báo cáo phiên. Những điều team Game cần biết:
+
+- **Gửi ack trong vòng `expiresAt` + 5 giây** (với `CLEAR_ALL_EFFECTS`:
+  `issuedAt` + 10 giây). Quá hạn đó backend đánh `NO_ACK`. Ack đến muộn hơn
+  vẫn được chấp nhận và sửa lại trạng thái.
+- **Ack đầu tiên được giữ.** Ack trùng cho cùng `commandId` vẫn được ghi
+  vào `effect_acks` nhưng không đổi trạng thái.
+- `status` ngoài `APPLIED|REJECTED|EXPIRED` bị bỏ qua (contract FROZEN).
+
 ---
 
 ## 6. Việc còn mở (cần chốt thêm)
