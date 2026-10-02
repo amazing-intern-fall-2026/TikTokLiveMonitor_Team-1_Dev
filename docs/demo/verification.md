@@ -117,6 +117,48 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
   mất. Lịch sử đầy đủ vẫn nằm ở `effect_commands`/`effect_acks` và báo cáo phiên. Tốc độ theo phút
   tính theo thời điểm dashboard nhận event, nên một dashboard mới mở chỉ đếm từ lúc mở.
 
+## N6: nghiệm thu trên stack sạch — 02/10/2026
+
+Commit kiểm: `26e3054` (+ các sửa nhỏ của N6 bên dưới). Môi trường: Windows 11, Docker Desktop,
+`DB_PORT=5433` (cổng 5432 máy này đã có Postgres riêng). Lệnh: `docker compose down -v && docker compose up -d
+--build --wait`. Cả 3 service healthy; schema + seed tự nạp (4 rule, 1 live_stream); job retention được lên
+lịch; `CORS_ORIGINS` mặc định cho phép `http://localhost:5173`.
+
+| Hạng mục | Kết quả |
+|---|---|
+| `npm run bench` (NFR-PERF-01 + AC-08) | **16/16 pass**. Sự kiện → dashboard 300/300, p50 3 ms, p95 9 ms. Sự kiện → Game 40/40, p50 259 ms, p95 266 ms. Kill-switch → `CLEAR_ALL_EFFECTS` sau 7 ms |
+| `npm run test:ac08` | 8/8 pass |
+| `npm test --prefix backend` | 60/60 pass |
+| Token `/game` | không token → `MISSING_TOKEN`; role operator → `WRONG_ROLE`; sai chữ ký / hết hạn / rác → `INVALID_OR_EXPIRED_TOKEN`; token hợp lệ → kết nối |
+| `final-states.spec.js` (UI states) | **pass** (lần đầu thật sự chạy được). Dùng Microsoft Edge qua `channel: 'msedge'` vì máy chỉ có Chromium bản cũ của Playwright (1228, cần 1243) |
+| `full-flow.spec.js` (viết lại) | 3/3 pass, chạy 2 lần liên tiếp trên cùng backend. Có bước tải CSV thật (`E2E_EXPECT_SESSION=1`) |
+| Kết nối thật tới TikTok từ trong Docker | container ra được tiktok.com. `@zz_e2e_nolive_0000` → 404 "Không tìm thấy tài khoản" (1,1 s); `@tiktok` → 409 "hiện không phát trực tiếp" (1,7 s); handle sai định dạng → 400. Khớp FR-05 |
+
+**Báo cáo/CSV trên Postgres thật.** Chưa có LIVE thật nên không tạo được phiên bằng cách thông thường. Mình
+dựng một phiên bằng chính code backend (repository → AsyncEventBatcher → `generateReport`) trong container: 6
+chat, 2 join, combo Rose ×3 (2 tick + 1 chốt) và 1 Lion 500 💎.
+- Report: 6 comment, 2 join, **2 quà** (code trước N3 sẽ ra 4), 503 💎. Đúng.
+- `app_users.tiktok_user_id`: cả 2 dòng dài 64 ký tự hex (HMAC). `raw_live_events.raw_payload.user` chỉ có
+  `userIdHash`; tìm userId/handle/tên gốc trong raw payload và id: 0 kết quả.
+- `GET /api/sessions/1/export?format=csv` không token → 401; có token → 200, `attachment; filename="session-1-report.csv"`.
+  CSV chỉ có `rank` + số trong `top_contributors`, 0 chuỗi định danh. Tải qua nút CSV trong UI cho cùng nội dung.
+- Còn mở (đã ghi từ N2): `username`/`nickname` vẫn plaintext trong `app_users` tối đa `RETENTION_DAYS` ngày.
+
+**Lỗi phát hiện và sửa trong N6**
+1. `full-flow.spec.js` cũ không chạy được (mật khẩu `admin123`, `/game` không token, cần LIVE thật, nhiều assertion luôn đúng).
+   Đã viết lại; bản gốc của hào giữ dạng comment cuối file.
+2. Bản viết lại ban đầu có 2 lỗi test, đã sửa: handle test dài hơn 24 ký tự nên chỉ chạm bước kiểm tra
+   định dạng, chưa chạm connector; bước tải CSV bị bỏ qua vì kiểm tra nút khi modal còn "Đang tải...".
+   Lần chạy lại thứ hai còn lộ ra test phụ thuộc cooldown của rule seed và lịch sử cũ, nên giờ test tự tạo
+   rule riêng rồi xoá.
+3. Log `Connector error` ghi `"error":"[object Object]"` (connector phát `{ info, exception }`). Giờ ghi
+   `"info":"Error while connecting","error":"Failed to retrieve Room ID from all sources."`.
+
+**Chưa kiểm chứng được (cần người có LIVE thật):** feed từ phòng LIVE thật, quà combo thật (bảng ở
+`docs/status/br-gf-01-ket-luan.md`), đóng phiên thật và report của nó, reconnect khi mất mạng thật, host
+kết thúc LIVE thật, độ trễ qua mạng thật. `benchmark-effect-latency.js` (ở thư mục gốc) là bản cũ không gửi
+token `/game`, đã được `npm run bench` thay thế.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

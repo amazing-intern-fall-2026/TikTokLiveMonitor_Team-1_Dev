@@ -53,12 +53,20 @@ mật khẩu/token khi chia sẻ màn hình.
 
 ## Checklist nghiệm thu và bằng chứng
 
-- [ ] Ảnh header Connected → Reconnecting → Connected → Ended.
-- [ ] Ảnh empty state; lỗi handle; lịch sử lỗi và retry thành công.
-- [ ] Log /game: thiếu/sai/hết hạn token bị từ chối, token hợp lệ kết nối.
-- [ ] Log EFFECT_COMMAND/ACK, pause/resume, CLEAR_ALL_EFFECTS/ACK.
-- [ ] CSV thực tế từ Postgres không có định danh contributor; tổng khớp report.
-- [ ] Record video dự phòng, ghi commit và cấu hình môi trường (không ghi secret).
+Kết quả nghiệm thu 02/10/2026 ở [verification.md](verification.md), mục "N6". `[x]` = đã có bằng chứng
+tự động hoặc log; `[ ]` = còn thiếu.
+
+- [x] Header Connected → Reconnecting → Ended, giữ feed, snapshot khi F5: `final-states.spec.js` pass
+  (kiểm tra tự động, chưa có ảnh chụp).
+- [x] Empty state; lỗi handle (404 không tìm thấy, 409 không phát trực tiếp); lịch sử lỗi + retry:
+  `final-states.spec.js` và `full-flow.spec.js` pass.
+- [x] Log /game: thiếu token, sai role, sai chữ ký, hết hạn, rác bị từ chối; token hợp lệ kết nối.
+- [x] Log EFFECT_COMMAND/ACK, pause/resume, CLEAR_ALL_EFFECTS/ACK: `npm run bench` 16/16,
+  `npm run test:ac08` 8/8.
+- [x] CSV từ Postgres thật không có định danh contributor, tổng khớp report. Lưu ý: phiên được dựng bằng
+  code backend, **không phải từ LIVE thật**.
+- [ ] **Chạy trên một phòng TikTok LIVE thật** (feed thật, quà combo, kết thúc LIVE, report của phiên thật).
+- [ ] Ảnh chụp các trạng thái header; video dự phòng; ghi commit và cấu hình môi trường (không ghi secret).
 
 ## Kiểm tra code
 
@@ -75,5 +83,11 @@ npx playwright test tests/e2e/final-states.spec.js --workers=1
 
 Test UI mới không cần TikTok/Postgres: kiểm tra header theo socket thật,
 feed giữ lại, snapshot khi reload, empty/error state và retry lịch sử.
-Test E2E `full-flow.spec.js` cũ phụ thuộc LIVE thật và vẫn kết nối /game
-không token; chưa dùng nó làm bằng chứng nghiệm thu lần này.
+Test E2E `full-flow.spec.js` đã viết lại (02/10/2026): đăng nhập thật, `/game` có token, tự tạo rule riêng,
+kiểm tra effect → ACK hiện trên dashboard, Kill Switch, tải CSV. Không cần LIVE thật. Chạy:
+
+```bash
+# stack đang chạy (docker compose up); lấy giá trị từ .env
+E2E_ADMIN_PASSWORD=... E2E_GAME_CLIENT_SECRET=... npx playwright test tests/e2e/full-flow.spec.js --workers=1
+# thêm E2E_EXPECT_SESSION=1 nếu DB đã có phiên đã đóng (bắt buộc phải thấy nút CSV)
+```

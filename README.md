@@ -123,6 +123,10 @@ npx oxlint --deny-warnings   # CI coi warning là lỗi
 npm run build
 ```
 
+**E2E** (Playwright, cần stack đang chạy và `npm ci` ở thư mục gốc): `final-states.spec.js` cần cổng 5000
+trống (nó tự dựng socket server giả, hãy `docker compose stop backend`); `full-flow.spec.js` cần backend thật,
+xem [docs/demo/final-demo.md](docs/demo/final-demo.md).
+
 **CI** (`.github/workflows/ci.yml`) chạy trên mỗi push/PR vào `main`/`dev`. Có 3 job:
 `npm test` của backend, lint + build frontend, và nạp `schema.sql` + `seed.sql` vào Postgres 16.
 

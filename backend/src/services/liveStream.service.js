@@ -277,7 +277,16 @@ function registerEventHandlers(connection, uniqueId) {
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
-    logger.error('Connector error', { uniqueId, error: err.message || String(err) });
+    // [CLAUDE EDIT 2026-10-02] Code gốc của Hdat-th (b395768), giữ lại để tham khảo.
+    // Lý do sửa: connector phát ControlEvent.ERROR với { info, exception } (README connector), không phải
+    // Error, nên err.message rỗng và String(err) ra "[object Object]" -- log không nói lỗi gì.
+    // logger.error('Connector error', { uniqueId, error: err.message || String(err) });
+    const cause = err?.exception ?? err;
+    logger.error('Connector error', {
+      uniqueId,
+      info: err?.info,
+      error: cause?.message || (typeof cause === 'string' ? cause : JSON.stringify(cause)),
+    });
   });
 
   // Chat message -> broadcast as a COMMENT envelope on the 'CHAT' channel.
