@@ -52,3 +52,26 @@ suy ra từ các khoảng trống thật tìm thấy khi review Tuần 3
 
 ## Định nghĩa "Xong Tuần 4"
 Toàn bộ AC **P0** đạt, ít nhất AC-W4-05 và AC-W4-10 đạt, các AC còn lại hoặc đạt hoặc có quyết định "ngoài phạm vi" bằng văn bản.
+
+## Kết quả cuối Tuần 4 (02/10/2026)
+
+Bằng chứng chi tiết ở [verification.md](../demo/verification.md) (mục N2–N6) và
+[fr-br-status-cuoi-v1.0.md](fr-br-status-cuoi-v1.0.md). "LIVE thật" chưa được chạy trong v1.0.
+
+| AC | Kết quả | Bằng chứng / còn thiếu |
+|---|---|---|
+| W4-01 Token `/game` | **Đạt** | 6 trường hợp handshake (thiếu, sai role, sai chữ ký, hết hạn, rác, hợp lệ) + `npm run bench` 16/16 + `test:ac08` 8/8 |
+| W4-02 Đăng nhập thật | **Đạt** | E2E: sai mật khẩu bị từ chối, đúng thì vào Dashboard. Chưa thử riêng "F5 khi token hết hạn" (logic 401 → về Login có trong `api.js`) |
+| W4-03 `requireAuth` | **Đạt** | Route nhạy cảm trả 401 khi thiếu token. `/api/test-events/*`: chỉ có khi `NODE_ENV` khác `production`, quyết định ghi ở [release-notes-v1.0.md](../release-notes-v1.0.md) |
+| W4-04 Ẩn danh userId | **Đạt** | HMAC trong `app_users` và `raw_live_events`; kiểm trên Postgres thật; test đơn vị |
+| W4-05 Xuất và lịch sử phiên | **Đạt** | Modal + nút CSV chạy trên Postgres thật. CSV hiện chỉ có số/JSON, chưa mở thử bằng Excel. Modal chưa có bộ lọc phòng/ngày |
+| W4-06 Quản lý rule | **Đạt** (phương án a) | CRUD API + `RulesPage` đọc/ghi thật, RuleEngine nạp lại không cần restart |
+| W4-07 Thông tin phòng, trạng thái LIVE | **Một phần** | Code + `final-states.spec.js` pass; chưa xác nhận trên LIVE thật |
+| W4-08 Kết luận `repeatEnd` | **Một phần** | Có kết luận bằng văn bản; **thiếu log quà từ LIVE thật** |
+| W4-09 Bộ lọc feed | **Đạt** | Đã xem trên trình duyệt thật; nên có thêm một người xem lại |
+| W4-10 E2E môi trường sạch | **Một phần** | `down -v && up --build` + E2E tự động pass **không dùng LIVE thật**; chưa chạy đủ 6 bước demo với phòng thật |
+| W4-11 Hiệu năng khi bật bảo mật | **Đạt** | 40/40, p95 266 ms (localhost, Docker). Ngưỡng SRS chưa biết nên dùng giả định 2000 ms |
+| W4-12 Tài liệu khớp code | **Đạt** | Hướng dẫn tích hợp Game, README, bảng trạng thái cuối, ghi chú phát hành |
+
+Theo định nghĩa "Xong Tuần 4": toàn bộ AC P0 (W4-01 → 04) **đạt**; W4-05 **đạt**; W4-10 **một phần** vì thiếu LIVE
+thật (ghi rõ ở trên, không phải quyết định "ngoài phạm vi").

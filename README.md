@@ -153,6 +153,8 @@ truyền `--p95-ms` đúng theo SRS. Thoát code 0 nếu mọi kiểm tra đạt
 
 ## Demo cuối và nghiệm thu
 
+- [Ghi chú phát hành v1.0](docs/release-notes-v1.0.md): giới hạn đã biết, việc còn lại, cách triển khai an toàn
+- [Bảng trạng thái FR/BR/NFR (bản cuối)](docs/status/fr-br-status-cuoi-v1.0.md)
 - [Kịch bản demo](docs/demo/final-demo.md)
 - [Rà soát bảo mật CSV](docs/demo/csv-security-review.md)
 - [Kết quả kiểm tra](docs/demo/verification.md)
