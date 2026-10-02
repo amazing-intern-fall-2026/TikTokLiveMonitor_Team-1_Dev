@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { getLiveStatus } = require('./socket.service');
 const effectAckService = require('../services/effectAck.service');
 const ruleEngine = require('../services/RuleEngine.service');
+const effectLog = require('../services/effectLog.service');
 const { jwtSecret } = require('../config/env');
 const { makeLogger } = require('../utils/logger');
 
@@ -44,6 +45,9 @@ function registerSocketHandlers(io) {
     for (const progress of ruleEngine.getProgressSnapshot()) {
       socket.emit('RULE_PROGRESS', progress);
     }
+
+    // Same for the Effect log: recent commands and their ack status, newest first.
+    socket.emit('EFFECT_HISTORY', effectLog.getRecent());
 
     socket.on('disconnect', () => {
       monitorLog.info('Client disconnected', { socketId: socket.id });

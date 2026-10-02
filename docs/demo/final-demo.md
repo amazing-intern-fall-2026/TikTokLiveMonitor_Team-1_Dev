@@ -31,9 +31,9 @@ mật khẩu/token khi chia sẻ màn hình.
 | 0–1 phút | Giới thiệu, đăng nhập Operator | “Hệ thống biến tương tác TikTok LIVE thành lệnh hiệu ứng có ACK từ Game.” |
 | 1–2 phút | Quan sát khi chưa kết nối; nhập handle LIVE | Empty state hướng dẫn kết nối; header chuyển sang LIVE Connected @handle. |
 | 2–4 phút | Gửi comment/quà/join thật hoặc MOCK DEV TOOLS | Feed và chỉ số tăng; bộ lọc từng loại hoạt động; dữ liệu mô phỏng được giới thiệu rõ. |
-| 4–5 phút | Với seed: 3 chat HEAL từ các user khác nhau trong 30s hoặc quà đạt ngưỡng | RULE_PROGRESS và log EFFECT_COMMAND, EFFECT_ACK; giải thích cooldown/dedup khi không phát lệnh tiếp. Nút mock có thể dùng cùng user nên cần kiểm tra anti-spam. |
+| 4–5 phút | Với seed: 3 chat HEAL từ các user khác nhau trong 30s hoặc quà đạt ngưỡng | RULE_PROGRESS và log EFFECT_COMMAND, EFFECT_ACK; dải **⚡ Effect** cạnh các tab lọc đếm theo trạng thái (Áp dụng / Từ chối / Hết hạn / Không ACK), tab **⚡ Effect** liệt kê từng lệnh kèm rule kích hoạt và lý do từ chối; thẻ Comments/Diamonds hiện tốc độ "/ phút" (60 giây gần nhất); giải thích cooldown/dedup khi không phát lệnh tiếp. Nút mock có thể dùng cùng user nên cần kiểm tra anti-spam. |
 | 5–6 phút | Tạm dừng effect, gửi thêm tương tác; tiếp tục | Feed tiếp tục nhận, lệnh effect mới bị chặn lúc pause; resume cho phép phát lại. |
-| 6–7 phút | Kill Switch | Log CLEAR_ALL_EFFECTS và ACK; “Dừng khẩn cấp khác với pause lệnh mới.” |
+| 6–7 phút | Kill Switch | Log CLEAR_ALL_EFFECTS và ACK; tab ⚡ Effect hiện dòng 🚨 KILL SWITCH chuyển Chờ ACK → Đã áp dụng; “Dừng khẩn cấp khác với pause lệnh mới.” |
 | 7–8 phút | Ngắt mạng phía connector TikTok rồi phục hồi | Header “Đang kết nối lại”; dữ liệu cũ còn; về Connected khi connector khôi phục. Ngắt đường browser → backend chỉ chứng minh reconnect kênh monitor, phải nói rõ. |
 | 8–9 phút | Host kết thúc LIVE | Header “LIVE đã kết thúc”, không retry phiên đã kết thúc; thử F5 để xác nhận snapshot. |
 | 9–10 phút | Mở Lịch sử phiên, tải CSV | Phiên đã đóng xuất hiện sau khi report được tạo; CSV chỉ có thứ hạng và tổng tương tác trong top_contributors. |

@@ -93,6 +93,30 @@ tự nạp), đã bật auth middleware và token `/game`. Lệnh:
     - Bỏ tick rule 2 → `is_active = false`, RuleEngine nạp lại còn 4 rule.
 - CI chưa chạy cho tới khi push (không chạy được GitHub Actions trên máy).
 
+## N5: Effect log và chỉ số theo phút trên Dashboard (BR-EFF-03, FR-17) — 02/10/2026
+
+- `npm test --prefix backend`: 60/60 pass (8 test mới cho `effectLog.service`). `npx oxlint --deny-warnings`
+  cho frontend: 0 warning; `npm run build` pass.
+- Chạy end-to-end: backend + Postgres 16 thật, game client giả (ack theo từng effect), dashboard trên
+  trình duyệt. Bắn 4 rule bằng mock event:
+
+  | Effect | Game phản hồi | Trạng thái trên Dashboard | `effect_commands.status` |
+  |---|---|---|---|
+  | HEAL_HP | APPLIED | Đã áp dụng | APPLIED |
+  | SLOW_DOWN | REJECTED "nhân vật đang chết" | Bị từ chối, kèm lý do | REJECTED |
+  | SHIELD | EXPIRED "đến trễ" | Hết hạn, kèm lý do | EXPIRED |
+  | POWER_UP | không ack | Không có ACK (sau ~10–15 giây) | NO_ACK |
+  | Kill Switch | APPLIED | 🚨 KILL SWITCH, Đã áp dụng | APPLIED |
+
+  Dashboard và DB khớp nhau từng dòng. Tải lại trang (F5) vẫn hiện đủ danh sách từ `EFFECT_HISTORY`.
+- Chỉ số theo phút: gửi 5 chat + 1 quà 300 💎 → "5 / phút" và "300 / phút". Sau 60 giây số này về
+  "0 / phút", tổng (5 và 300) giữ nguyên.
+- Layout ở viewport 1280×720: cột feed vẫn cao 141px như trước khi thêm (dải Effect đặt cùng hàng
+  với tab lọc, tốc độ đặt cùng hàng với số tổng).
+- Giới hạn: danh sách Effect lưu trong bộ nhớ backend (50 lệnh gần nhất), khởi động lại backend thì
+  mất. Lịch sử đầy đủ vẫn nằm ở `effect_commands`/`effect_acks` và báo cáo phiên. Tốc độ theo phút
+  tính theo thời điểm dashboard nhận event, nên một dashboard mới mở chỉ đếm từ lúc mở.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:

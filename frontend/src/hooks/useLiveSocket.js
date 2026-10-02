@@ -8,6 +8,11 @@ const MAX_FEED_ITEMS = 200; // NFR-PERF-05 & FR-13: Chống tràn bộ nhớ DOM
 
 const EMPTY_STATS = { comments: 0, diamonds: 0, totalGifts: 0, joins: 0 };
 const EMPTY_ROOM_INFO = { avatarUrl: null, liveStartedAt: null };
+// FR-17: tốc độ theo phút tính trên cửa sổ trượt 60 giây gần nhất (thời điểm nhận event).
+const RATE_WINDOW_MS = 60_000;
+const EMPTY_RATES = { commentsPerMin: 0, diamondsPerMin: 0 };
+// BR-EFF-03: số effect giữ trong Effect log (khớp 20 mục backend gửi trong EFFECT_HISTORY, dư để nhận thêm).
+const MAX_EFFECT_LOG = 30;
 
 // Helper phân giải tên khán giả chuẩn Envelope Contract (Mục 4.2 SRS)
 function resolveUserName(data, fallback = 'Khán giả') {
@@ -31,6 +36,9 @@ export function useLiveSocket() {
     const [giftEvents, setGiftEvents] = useState([]);
     const [viewerCount, setViewerCount] = useState(0);
     const [stats, setStats] = useState(EMPTY_STATS);
+    const [rates, setRates] = useState(EMPTY_RATES);
+    // BR-EFF-03: effect đã gửi sang Game và trạng thái ACK, mới nhất trước.
+    const [effectLog, setEffectLog] = useState([]);
     // FR-32: trạng thái pause effect, đồng bộ qua socket event
     // 'EFFECT_PAUSE_STATE' trên /monitor (RuleEngine.service.js#setEffectsPaused)
     // -- không tự đoán/toggle ở FE, luôn tin theo giá trị backend phát ra để
@@ -47,6 +55,9 @@ export function useLiveSocket() {
     const [roomStatus, setRoomStatus] = useState(null);
 
     const socketRef = useRef(null);
+    // FR-17: mốc thời gian comment / quà đã chốt trong cửa sổ 60s gần nhất.
+    const commentTimesRef = useRef([]);
+    const giftTimesRef = useRef([]);
 
     // Vá lỗi chuyển phòng: gọi ngay sau khi đổi @handle kết nối thành công,
     // đưa toàn bộ feed + số liệu về 0 thay vì cộng dồn từ phòng trước.
@@ -59,6 +70,9 @@ export function useLiveSocket() {
         setGiftEvents([]);
         setViewerCount(0);
         setStats(EMPTY_STATS);
+        commentTimesRef.current = [];
+        giftTimesRef.current = [];
+        setRates(EMPTY_RATES);
         setRoomInfo(EMPTY_ROOM_INFO);
         setRoomStatus(null);
     }, []);
@@ -71,6 +85,20 @@ export function useLiveSocket() {
             autoConnect: true,
         });
         socketRef.current = socket;
+
+        // FR-17: tính lại tốc độ mỗi giây (cũng để số tự giảm khi phòng im ắng).
+        const rateTimer = setInterval(() => {
+            const cutoff = Date.now() - RATE_WINDOW_MS;
+            commentTimesRef.current = commentTimesRef.current.filter((t) => t > cutoff);
+            giftTimesRef.current = giftTimesRef.current.filter((g) => g.t > cutoff);
+            const next = {
+                commentsPerMin: commentTimesRef.current.length,
+                diamondsPerMin: giftTimesRef.current.reduce((sum, g) => sum + g.diamonds, 0),
+            };
+            setRates((prev) =>
+                prev.commentsPerMin === next.commentsPerMin && prev.diamondsPerMin === next.diamondsPerMin ? prev : next
+            );
+        }, 1000);
 
         socket.on('connect', () => setSocketError(''));
         socket.on('disconnect', () => {
@@ -133,8 +161,25 @@ export function useLiveSocket() {
             if (data?.status) setRoomStatus(data.status);
         });
 
+        // BR-EFF-03: snapshot khi (re)connect thay thế toàn bộ danh sách, rồi từng
+        // EFFECT_STATUS cập nhật/thêm theo commandId.
+        socket.on('EFFECT_HISTORY', (list) => {
+            if (Array.isArray(list)) setEffectLog(list.slice(0, MAX_EFFECT_LOG));
+        });
+        socket.on('EFFECT_STATUS', (entry) => {
+            if (!entry?.commandId) return;
+            setEffectLog((prev) => {
+                const idx = prev.findIndex((e) => e.commandId === entry.commandId);
+                if (idx === -1) return [entry, ...prev].slice(0, MAX_EFFECT_LOG);
+                const next = [...prev];
+                next[idx] = entry;
+                return next;
+            });
+        });
+
         // 1. CHAT (SRS 4.3)
         socket.on('CHAT', (data) => {
+            commentTimesRef.current.push(Date.now());
             const commentText = data.payload?.text ?? data.comment ?? '';
             const item = {
                 id: data.eventId || `chat_${data.createTime || Date.now()}_${Math.random()}`,
@@ -190,6 +235,7 @@ export function useLiveSocket() {
             };
             setGiftEvents((prev) => [item, ...prev.slice(0, MAX_FEED_ITEMS - 1)]);
             if (isFinished) {
+                giftTimesRef.current.push({ t: Date.now(), diamonds: Number(totalDiamonds) || 0 });
                 setStats((prev) => ({
                     ...prev,
                     totalGifts: prev.totalGifts + repeatCount,
@@ -198,7 +244,13 @@ export function useLiveSocket() {
             }
         });
 
-        return () => socket.disconnect();
+        // [CLAUDE EDIT 2026-10-02] Code gốc của Ngô Đức Tài (44d7f0e), giữ lại để tham khảo.
+        // Lý do sửa: phải dừng rateTimer (FR-17) khi unmount, nếu không interval vẫn chạy sau khi rời trang.
+        // return () => socket.disconnect();
+        return () => {
+            clearInterval(rateTimer);
+            socket.disconnect();
+        };
     }, [resetDashboardState]);
 
     return {
@@ -213,6 +265,8 @@ export function useLiveSocket() {
         giftEvents,
         viewerCount,
         stats,
+        rates,
+        effectLog,
         roomInfo,
         setRoomInfo,
         roomStatus,

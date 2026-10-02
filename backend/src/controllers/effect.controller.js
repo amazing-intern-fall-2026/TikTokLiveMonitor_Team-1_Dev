@@ -3,6 +3,7 @@ const { broadcastGameCommand } = require('../sockets/socket.service');
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const liveStreamService = require('../services/liveStream.service');
 const ruleEngine = require('../services/RuleEngine.service');
+const effectLog = require('../services/effectLog.service');
 const { makeLogger } = require('../utils/logger');
 
 const logger = makeLogger('effect');
@@ -29,6 +30,7 @@ async function killSwitch(req, res) {
   logger.info('Kill switch: effects paused', { droppedQueuedCommands: dropped });
 
   broadcastGameCommand('CLEAR_ALL_EFFECTS', payload);
+  effectLog.record(payload, 'SENT');
 
   effectCommandRepository
     .create({ sessionId: liveStreamService.getCurrentSessionId(), payload, status: 'SENT' })

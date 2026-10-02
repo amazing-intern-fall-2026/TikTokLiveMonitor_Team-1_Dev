@@ -1167,3 +1167,106 @@ select:focus {
 }
 
 .dot-ended { background: #94a3b8; }
+
+/* BR-EFF-03: dải trạng thái effect + danh sách Effect (components/EffectLog.jsx). */
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.metric-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Hàng tab lọc + dải effect: không tốn thêm chiều cao, xuống dòng khi hẹp. */
+.feed-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.effect-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 280px;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.effect-strip-title {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.effect-strip-empty {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effect-strip-counts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.effect-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.effect-sent { color: var(--color-comment); }
+.effect-applied { color: #22c55e; }
+.effect-rejected { color: var(--color-danger); }
+.effect-expired { color: var(--color-gift); }
+.effect-noack { color: var(--text-muted); }
+
+.effect-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.effect-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.effect-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.effect-row-top .effect-badge {
+  margin-left: auto;
+}
+
+.effect-row-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .effect-strip {
+    flex-basis: 100%;
+  }
+}

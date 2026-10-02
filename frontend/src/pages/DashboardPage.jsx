@@ -10,6 +10,7 @@ import RulesPage from './RulesPage';
 import RuleProgressSection from '../components/RuleProgressSection';
 import VirtualList from '../components/VirtualList';
 import SessionHistoryModal from '../components/SessionHistoryModal';
+import { EffectStrip, EffectLogList } from '../components/EffectLog';
 
 // Ảo hoá 3 cột feed (windowing) -- các hằng số này PHẢI khớp
 // height + margin-bottom của .chat-row/.gift-row/.join-row trong App.css
@@ -28,6 +29,8 @@ const FEED_TABS = [
   { key: 'COMMENT', label: '💬 Bình luận' },
   { key: 'GIFT', label: '🎁 Quà tặng' },
   { key: 'JOIN', label: '👤 Hoạt động' },
+  // BR-EFF-03: danh sách effect + trạng thái ACK (không có trong chế độ 'ALL').
+  { key: 'EFFECT', label: '⚡ Effect' },
 ];
 
 export default function DashboardPage({ adminUsername, onLogout }) {
@@ -48,6 +51,8 @@ export default function DashboardPage({ adminUsername, onLogout }) {
     giftEvents,
     viewerCount,
     stats,
+    rates,
+    effectLog,
     roomInfo,
     setRoomInfo,
     roomStatus,
@@ -58,7 +63,11 @@ export default function DashboardPage({ adminUsername, onLogout }) {
   const [isTogglingPause, setIsTogglingPause] = useState(false);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
 
-  const feedCounts = { COMMENT: chatEvents.length, GIFT: giftEvents.length, JOIN: joinEvents.length };
+  // [CLAUDE EDIT 2026-10-02] Code gốc của hao (3132716), giữ lại để tham khảo.
+  // Lý do sửa: thêm bộ đếm cho tab "Effect" (BR-EFF-03).
+  // const feedCounts = { COMMENT: chatEvents.length, GIFT: giftEvents.length, JOIN: joinEvents.length };
+  const feedCounts = { COMMENT: chatEvents.length, GIFT: giftEvents.length, JOIN: joinEvents.length, EFFECT: effectLog.length };
+  const showEffect = feedTab === 'EFFECT';
   const showComment = feedTab === 'ALL' || feedTab === 'COMMENT';
   const showGift = feedTab === 'ALL' || feedTab === 'GIFT';
   const showJoin = feedTab === 'ALL' || feedTab === 'JOIN';
@@ -247,7 +256,13 @@ export default function DashboardPage({ adminUsername, onLogout }) {
             <section className="metrics-grid">
               <div className="metric-card">
                 <span className="metric-label">💬 Comments</span>
-                <span className="metric-value">{stats.comments.toLocaleString()}</span>
+                {/* FR-17: tốc độ trên cửa sổ trượt 60 giây gần nhất, cùng hàng với số tổng.
+                    [CLAUDE EDIT 2026-10-02] Code gốc của Ngô Đức Tài (63ed167): chỉ có
+                    <span className="metric-value">{stats.comments.toLocaleString()}</span> (không có tốc độ/phút). */}
+                <span className="metric-value-row">
+                  <span className="metric-value">{stats.comments.toLocaleString()}</span>
+                  <span className="metric-sub">{rates.commentsPerMin.toLocaleString()} / phút</span>
+                </span>
               </div>
               <div className="metric-card">
                 <span className="metric-label">👤 Joins</span>
@@ -259,7 +274,12 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               </div>
               <div className="metric-card">
                 <span className="metric-label">💎 Diamonds</span>
-                <span className="metric-value">{stats.diamonds.toLocaleString()}</span>
+                {/* [CLAUDE EDIT 2026-10-02] Code gốc của Ngô Đức Tài (63ed167): chỉ có
+                    <span className="metric-value">{stats.diamonds.toLocaleString()}</span> (không có tốc độ/phút). */}
+                <span className="metric-value-row">
+                  <span className="metric-value">{stats.diamonds.toLocaleString()}</span>
+                  <span className="metric-sub">{rates.diamondsPerMin.toLocaleString()} / phút</span>
+                </span>
               </div>
               <div className="metric-card">
                 <span className="metric-label">👁 Viewers</span>
@@ -276,6 +296,8 @@ export default function DashboardPage({ adminUsername, onLogout }) {
               <span className="receiving-pill">{displayStatus === 'CONNECTED' ? '● Receiving' : statusLabels[displayStatus]}</span>
             </div>
 
+            {/* BR-EFF-03: dải trạng thái effect nằm cùng hàng với tab lọc để không chiếm thêm chiều cao. */}
+            <div className="feed-toolbar">
             <div className="feed-tabs" role="tablist" aria-label="Lọc feed theo loại sự kiện">
               {FEED_TABS.map((tab) => (
                 <button
@@ -291,8 +313,17 @@ export default function DashboardPage({ adminUsername, onLogout }) {
                 </button>
               ))}
             </div>
+            <EffectStrip effects={effectLog} />
+            </div>
 
             <main className={`columns-grid ${feedTab === 'ALL' ? '' : 'columns-grid-single'}`}>
+              {showEffect && (
+              <div className="column-card">
+                <div className="col-header"><h3>Effect ({effectLog.length})</h3></div>
+                <EffectLogList effects={effectLog} />
+              </div>
+              )}
+
               {showComment && (
               <div className="column-card">
                 <div className="col-header"><h3>Bình luận ({chatEvents.length})</h3></div>

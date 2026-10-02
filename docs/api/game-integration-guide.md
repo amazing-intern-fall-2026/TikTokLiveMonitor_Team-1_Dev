@@ -339,6 +339,12 @@ dòng `effect_commands` bằng `commandId`, ghi log vào bảng `effect_acks`
 được ghi) và ack cho `CLEAR_ALL_EFFECTS` do Operator bấm thủ công
 (`rule_id` là `NULL`).
 
+**Hiển thị cho Operator (02/10/2026):** mỗi lệnh gửi đi, mỗi ack và mỗi lần quá hạn đều được phát
+trên `/monitor` dưới dạng `EFFECT_STATUS` `{ commandId, kind: EFFECT|KILL_SWITCH, effectCode, ruleId,
+summary, status: SENT|APPLIED|REJECTED|EXPIRED|NO_ACK, reason, issuedAt, updatedAt }`; dashboard mới mở
+nhận `EFFECT_HISTORY` (20 lệnh gần nhất, mới nhất trước). `reason` của ack `REJECTED`/`EXPIRED` được
+hiển thị nguyên văn cho Operator, nên hãy ghi lý do dễ hiểu.
+
 **Cập nhật 02/10/2026:** ack nay còn cập nhật `effect_commands.status`
 (`SENT` → `APPLIED`/`REJECTED`/`EXPIRED`), và trạng thái này được đưa vào
 báo cáo phiên. Những điều team Game cần biết:

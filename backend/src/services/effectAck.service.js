@@ -1,5 +1,6 @@
 const effectCommandRepository = require('../repositories/effectCommand.repository');
 const effectAckRepository = require('../repositories/effectAck.repository');
+const effectLog = require('./effectLog.service');
 const { makeLogger } = require('../utils/logger');
 
 const logger = makeLogger('EffectAck');
@@ -21,6 +22,9 @@ async function recordAck({ commandId, status, reason }) {
     logger.warn('Ignoring ack with unknown status', { commandId, status });
     return;
   }
+
+  // Dashboard first, DB second: the Effect log must keep working even when Postgres is down.
+  effectLog.update(commandId, status, reason);
 
   // [CLAUDE EDIT 2026-10-02] Code gốc của TaiXN (540930d), giữ lại để tham khảo.
   // Lý do sửa: (1) ack chỉ ghi effect_acks, effect_commands.status đứng yên ở SENT nên báo cáo phiên
@@ -88,6 +92,7 @@ function init() {
     return;
   }
   sweepTimer = setInterval(() => {
+    effectLog.sweepNoAck(ACK_GRACE_MS);
     sweepUnacked().catch((err) => logger.error('NO_ACK sweep failed', { error: err.message }));
   }, NO_ACK_SWEEP_INTERVAL_MS);
   sweepTimer.unref();
