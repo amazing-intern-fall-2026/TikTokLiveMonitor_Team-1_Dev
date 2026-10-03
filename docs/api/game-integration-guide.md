@@ -3,7 +3,7 @@
 Tài liệu hướng dẫn team Game Client kết nối vào namespace Socket.io
 `/game`, nhận lệnh hiệu ứng (`EFFECT_COMMAND` / `CLEAR_ALL_EFFECTS`), và
 trả `EFFECT_ACK` đúng chuẩn (BR-EFF-03). Có sẵn implementation mẫu chạy
-được ngay tại `backend/mock-game-client.js` — mọi ví dụ dưới đây đã được
+được ngay tại `backend/mock-game-client/index.js` — mọi ví dụ dưới đây đã được
 test thật với implementation mẫu đó, không phải code lý thuyết.
 
 > **Vì sao có namespace riêng `/game`:** Backend tách `/monitor` (feed +
@@ -20,12 +20,16 @@ Theo tiêu chuẩn an toàn NFR-SEC-02, Game Client phải xác thực trước 
 
 ### 1.1. Luồng cấp phát Token phiên (Session Token)
 
+> **Sửa 03/10/2026:** bản trước ghi `POST /api/game/token` với `clientKey`/`roomId`. Endpoint đó không
+> tồn tại trong backend. Nội dung dưới đã đối chiếu với `auth.controller.js#gameToken`; xem thêm
+> `docs/api/game-token-spec.md`.
+
 ```
 Game Client                  Backend REST API                Socket.io (/game)
     |                               |                                |
-    |-- 1. POST /api/game/token --->|                                |
-    |      (clientKey, roomId)      |                                |
-    |<-- 2. Token JWT (TTL 4h) -----|                                |
+    |-- 1. POST /api/auth/game-token>|                                |
+    |      (clientSecret)           |                                |
+    |<-- 2. Token JWT (24h) --------|                                |
     |                                                                |
     |-- 3. Connect ws://.../game (auth: { token }) ----------------->|
     |<-- 4. Handshake OK (connect event) ----------------------------|
@@ -33,32 +37,22 @@ Game Client                  Backend REST API                Socket.io (/game)
 
 #### Chi tiết Endpoint lấy Token:
 - **Phương thức:** `POST`
-- **Đường dẫn:** `/api/game/token`
+- **Đường dẫn:** `/api/auth/game-token`
 - **Headers:** `Content-Type: application/json`
 - **Request Body:**
 ```json
-{
-  "clientKey": "<GAME_CLIENT_KEY>",
-  "roomId": "streamer_01",
-  "engineVersion": "Unity_2022.3"
-}
+{ "clientSecret": "<GAME_CLIENT_SECRET>" }
 ```
 - **Response thành công (HTTP 200 OK):**
 ```json
-{
-  "success": true,
-  "data": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "tokenType": "Bearer",
-    "expiresIn": 14400,
-    "namespace": "/game",
-    "allowedActions": ["BUFF", "DEBUFF", "CLEAR_ALL"]
-  }
-}
+{ "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "tokenType": "Bearer", "expiresIn": "24h" }
 ```
 - **Mã lỗi:**
-  - `401 Unauthorized`: `clientKey` không hợp lệ hoặc đã bị thu hồi.
-  - `404 Not Found`: Phiên livestream cho `roomId` chưa được khởi tạo.
+  - `400`: thiếu `clientSecret`.
+  - `401`: `clientSecret` sai.
+  - `429`: nhập sai quá nhiều lần, IP bị khoá tạm (mặc định 15 phút).
+  - `500`: backend chưa cấu hình `GAME_CLIENT_SECRET`/`JWT_SECRET`.
+- Token hết hạn theo `GAME_TOKEN_EXPIRES_IN` (mặc định 24h), không có refresh token: gọi lại endpoint này để lấy token mới.
 
 ---
 
@@ -76,16 +70,12 @@ const { io } = require('socket.io-client');
 
 async function connectGameClient() {
   // 1. Gọi REST API lấy token phiên
-  const res = await fetch('http://localhost:5000/api/game/token', {
+  const res = await fetch('http://localhost:5000/api/auth/game-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      clientKey: process.env.GAME_CLIENT_KEY || 'dev_secret_key',
-      roomId: 'streamer_01'
-    }),
+    body: JSON.stringify({ clientSecret: process.env.GAME_CLIENT_SECRET }),
   });
-  const { data } = await res.json();
-  const sessionToken = data.token;
+  const { token: sessionToken } = await res.json();
 
   // 2. Mở kết nối Socket.io với auth token
   const socket = io('http://localhost:5000/game', {
@@ -120,16 +110,19 @@ using SocketIOClient;
 
 // 1. Lấy token phiên từ REST API
 using var httpClient = new HttpClient();
-var tokenRes = await httpClient.PostAsJsonAsync("http://localhost:5000/api/game/token", new {
-    clientKey = "dev_secret_key",
-    roomId = "streamer_01"
+var tokenRes = await httpClient.PostAsJsonAsync("http://localhost:5000/api/auth/game-token", new {
+    clientSecret = Environment.GetEnvironmentVariable("GAME_CLIENT_SECRET")
 });
 var tokenPayload = await tokenRes.Content.ReadFromJsonAsync<GameTokenResponse>();
+
+// Khai báo ở nơi khác trong project:
+// public record GameTokenResponse(string Token, string TokenType, string ExpiresIn);
+// (System.Text.Json khớp tên không phân biệt hoa thường qua PostAsJsonAsync/ReadFromJsonAsync mặc định Web)
 
 // 2. Mở kết nối WebSocket với token xác thực
 var socket = new SocketIOClient.SocketIO("http://localhost:5000/game", new SocketIOOptions
 {
-    Auth = new { token = tokenPayload.Data.Token },
+    Auth = new { token = tokenPayload.Token },
     Transport = SocketIOClient.Transport.TransportProtocol.WebSocket
 });
 
@@ -141,7 +134,7 @@ socket.OnConnected += (sender, e) =>
 await socket.ConnectAsync();
 ```
 
-Implementation mẫu đầy đủ: `backend/mock-game-client.js`.
+Implementation mẫu đầy đủ: `backend/mock-game-client/index.js`.
 
 ---
 
@@ -269,7 +262,7 @@ function handleCommand(command) {
 }
 ```
 
-Đoạn trên đã test thật qua `backend/mock-game-client.js` — bắn sự kiện
+Đoạn trên đã test thật qua `backend/mock-game-client/index.js` — bắn sự kiện
 mock từ nút "MOCK DEV TOOLS" trên dashboard, quan sát: lệnh vẫn còn hạn
 → ack `APPLIED`; dựng thử timestamp `expiresAt` đã qua → đúng nhánh ack
 `EXPIRED` (test logic 3 trường hợp biên: còn hạn / đã trễ / đúng thời
@@ -362,5 +355,5 @@ báo cáo phiên. Những điều team Game cần biết:
 
 - [ ] Danh mục `effectCode` chính thức + tham số mỗi effect (magnitude/duration hợp lệ) — chờ Dev Game xác nhận (OQ-01, `open-questions-devgame.md`)
 - [x] Cơ chế tạm dừng effect sau `CLEAR_ALL_EFFECTS` (FR-32) — **đã xong (24/09/2026)**: `POST /api/effects/pause` / `/resume` + `EFFECT_PAUSE_STATE` broadcast, verify bằng `backend/test-ac08-kill-switch-pause.js` (8/8 pass). Xem mục 3.
-- [x] Token phiên cho kênh `/game` (NFR-SEC-02) — đã đặc tả luồng POST /api/game/token và auth handshake (Mục 1)
+- [x] Token phiên cho kênh `/game` (NFR-SEC-02) — đã đặc tả luồng POST /api/auth/game-token và auth handshake (Mục 1)
 - [ ] Ví dụ C# đã bổ sung (16/09) nhưng CHƯA test thật với backend như bản JavaScript — cần Game team tự verify khi tích hợp, hoặc team Backend test lại bằng 1 client C# mẫu trước khi coi là "đã kiểm chứng"
