@@ -159,6 +159,59 @@ chat, 2 join, combo Rose ×3 (2 tick + 1 chốt) và 1 Lion 500 💎.
 kết thúc LIVE thật, độ trễ qua mạng thật. `benchmark-effect-latency.js` (ở thư mục gốc) là bản cũ không gửi
 token `/game`, đã được `npm run bench` thay thế.
 
+## Kiểm tra sau bàn giao Game — 03/10/2026
+
+Đối tượng: `main` ở commit `46ea8c4` (merge PR #48: mục "Bàn giao cho team Game" trong README và sửa mục 1 của
+`docs/api/game-integration-guide.md`). Môi trường: Windows 11, Docker Compose (db, backend, frontend), localhost.
+
+**Thay đổi được kiểm tra**
+
+- README có mục "Bàn giao cho team Game": kết nối, payload, quy tắc bắt buộc, `effectCode` mẫu, cách test,
+  checklist nghiệm thu, giới hạn đã biết.
+- Guide mục 1 sửa `POST /api/game/token` (`clientKey`) thành `POST /api/auth/game-token` (`clientSecret`).
+  Endpoint cũ không tồn tại, trả 404.
+
+**Kết quả**
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| Unit test backend (`npm test`) | 63/63 đạt |
+| Lint (`oxlint --deny-warnings`) và build frontend | Đạt |
+| Stack Docker: `/health`, frontend `:5173` | Đạt |
+| Token game: sai secret 401, thiếu secret 400, endpoint cũ 404 | Đạt |
+| Handshake `/game`: `MISSING_TOKEN`, `INVALID_OR_EXPIRED_TOKEN`, `WRONG_ROLE` | Đạt |
+| Mock game client theo README: nhận `HEAL_HP`, `POWER_UP`; ack `APPLIED`, `REJECTED` có `reason` | Đạt |
+| `npm run bench` | 16/16 đạt |
+| E2E `full-flow.spec.js` (backend thật) | 3/3 đạt |
+| E2E `final-states.spec.js` (socket giả, cổng 5000 trống) | 1/1 đạt |
+| `npm run test:ac08` | 8/8 khi backend sạch; 7/8 khi chạy liên tiếp (xem Lưu ý 1) |
+
+**Số đo (localhost)**
+
+| Phép đo | Kết quả |
+| --- | --- |
+| Sự kiện → dashboard (`/monitor`), 300 sự kiện | p95 = 13 ms (p50 5, max 28) |
+| Sự kiện → Game (`/game`), 40 `EFFECT_COMMAND` | p95 = 265 ms (p50 256, max 268); chủ yếu do giới hạn 3 lệnh/giây |
+| Kill-switch → Game nhận `CLEAR_ALL_EFFECTS` | 9 ms (ngưỡng 1000 ms) |
+
+**Lưu ý**
+
+1. Bước "sau resume effect được bắn lại" của `test:ac08` rớt khi chạy ngay sau một lần chạy trước hoặc sau khi bắn
+   sự kiện giả. Nguyên nhân nhiều khả năng là cooldown 20 giây của rule `POWER_UP` mẫu (chưa xác minh). Khi nghiệm thu,
+   restart backend trước khi chạy.
+2. Playwright 1.63 cần Chromium bản 1243; máy chỉ có bản 1228 nên phải chạy `npx playwright install chromium`
+   (~115 MB) trước khi chạy E2E.
+3. Ngưỡng p95 2000 ms vẫn là giả định, vì nội dung NFR-PERF-01 trong SRS không có trong repo.
+
+**Chưa kiểm tra**
+
+- Kết nối TikTok live thật (cần handle đang LIVE).
+- Mẫu C# trong guide chưa test với backend.
+- Độ trễ qua mạng thật; mọi số đo đều trên localhost.
+
+**Việc còn lại cho team Game:** gửi danh mục `effectCode`, `target` và khoảng `magnitude`/`durationMs` hợp lệ
+(OQ-01/OQ-02 chưa có phản hồi); tự kiểm chứng mẫu C#.
+
 ## Contract trạng thái bổ sung
 
 Socket.IO `/monitor`, event `LIVE_STATUS`:
