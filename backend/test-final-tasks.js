@@ -34,7 +34,8 @@ class FakeConnection extends EventEmitter {
 require.cache[require.resolve('tiktok-live-connector')].exports = { ...connector, TikTokLiveConnection: FakeConnection };
 require('./src/repositories/liveStream.repository').findOrCreateByHostUsername = async () => ({ id: 1 });
 require('./src/repositories/session.repository').create = async () => ({ id: 1 });
-require('./src/repositories/session.repository').markDisconnected = async () => {};
+const closed = [];
+require('./src/repositories/session.repository').markDisconnected = async (id, options) => { closed.push(options.status); };
 require('./src/services/eventBatch.service').flush = async () => {};
 require('./src/services/sessionReport.service').generateReport = async () => {};
 const sockets = require('./src/sockets/socket.service');
@@ -50,6 +51,8 @@ test('LIVE drop publishes reconnecting; STREAM_END cancels retry and retains end
   current.emit(connector.WebcastEvent.STREAM_END);
   await new Promise(setImmediate);
   assert.equal(sockets.getLiveStatus().status, 'ENDED');
+  assert.equal(closed.at(-1), 'ended');
+  assert.equal(closed.length, 1);
   assert.equal(live.getCurrentSessionId(), null);
   assert.equal(current.calls, 1);
   // [CLAUDE EDIT 2026-10-02] Code gốc của hao (aaf880c), giữ lại để tham khảo.
@@ -63,6 +66,8 @@ test('explicit disconnect publishes DISCONNECTED without scheduling reconnect', 
   await live.connectToLiveStream('demo_host');
   await live.disconnectCurrentLiveStream();
   assert.equal(sockets.getLiveStatus().status, 'DISCONNECTED');
+  assert.equal(closed.at(-1), 'disconnected');
+  assert.equal(closed.length, 2);
   assert.equal(sockets.getLiveStatus().username, null);
   assert.equal(current.calls, 1);
 });

@@ -12,6 +12,7 @@ const FLUSH_INTERVAL_MS = 2000;
 /** Queued items awaiting the next flush -- see enqueue() for the shape. */
 let queue = [];
 let flushTimer = null;
+let inFlight = null;
 
 /**
  * AsyncEventBatcher: buffers a CHAT/GIFT/JOIN event for Postgres persistence
@@ -27,34 +28,43 @@ let flushTimer = null;
 function enqueue(item) {
   queue.push(item);
   if (queue.length >= MAX_BATCH_SIZE) {
-    flush();
+    flushInBackground();
   }
 }
 
 /** Starts the periodic flush timer. Call once at server startup. */
 function init() {
   if (!flushTimer) {
-    flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+    flushTimer = setInterval(flushInBackground, FLUSH_INTERVAL_MS);
   }
 }
 
-/**
- * Drains the queue and bulk-writes it to Postgres in one transaction.
- * `queue.splice()` up front is synchronous, so a flush() triggered by
- * hitting MAX_BATCH_SIZE while the periodic timer's flush() is still
- * in-flight just sees an empty queue and no-ops -- no separate lock needed.
- * Exported so liveStream.service.js can await a final flush when a session
- * closes (FR-35/36: the session report must not miss whatever was still
- * buffered).
- */
-async function flush() {
-  if (queue.length === 0) {
-    return;
-  }
-  const batch = queue.splice(0, queue.length);
+/** Background callers consume rejection; the retained batch retries on the next tick. */
+function flushInBackground() {
+  flush().catch((err) => {
+    logger.error('Batch flush deferred; events retained for retry', { error: err.message });
+  });
+}
 
-  const client = await db.pool.connect();
+/** Serialize writes and wait for existing writes before draining newer events. */
+function flush() {
+  if (inFlight) return inFlight;
+  if (queue.length === 0) return Promise.resolve();
+  inFlight = drain().finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+async function drain() {
+  while (queue.length > 0) {
+    const batch = queue.splice(0, MAX_BATCH_SIZE);
+    await writeBatch(batch);
+  }
+}
+
+async function writeBatch(batch) {
+  let client;
   try {
+    client = await db.pool.connect();
     await client.query('BEGIN');
 
     // app_users: de-dupe by tiktokUserId first -- a single INSERT ... ON
@@ -107,8 +117,7 @@ async function flush() {
       }
     }
 
-    // raw_live_events: independent of the normalized write above, same as
-    // before (separate table, one failing must never block the other).
+    // Keep raw and normalized writes in the same transaction.
     await rawLiveEventRepository.bulkCreate(
       client,
       batch.map((item) => ({
@@ -122,10 +131,11 @@ async function flush() {
     await client.query('COMMIT');
     logger.debug(`Flushed batch of ${batch.length} event(s)`);
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    logger.error('Batch flush failed, events not persisted', { error: err.message, batchSize: batch.length });
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    queue = batch.concat(queue);
+    throw err;
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 
