@@ -212,10 +212,13 @@ function connectToLiveStream(uniqueId) {
 }
 
 function registerEventHandlers(connection, uniqueId) {
-  connection.on(WebcastEvent.STREAM_END, () => {
+  connection.on(WebcastEvent.STREAM_END, (data) => {
     const context = connectionContexts.get(uniqueId);
     if (!context || context.manualDisconnect) return;
-    // Set the flag synchronously so the ensuing DISCONNECTED cannot retry.
+    // Mark the end before teardown so a subsequent disconnect cannot retry.
+    context.streamEndedByHost = true;
+    logger.info('FR-08: TikTok STREAM_END received (host ended or was suspended)', { uniqueId, action: data?.action });
+    broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'ENDED' });
     publishLiveStatus('ENDED', uniqueId);
     disconnectFromLiveStream(uniqueId, true).catch((err) => {
       logger.error('Failed to close ended LIVE', { uniqueId, error: err.message });
@@ -259,21 +262,6 @@ function registerEventHandlers(connection, uniqueId) {
     // scheduleReconnect()).
     broadcastEvent('ROOM_STATUS', { roomId: String(getRoomId(uniqueId)), uniqueId, status: 'RECONNECTING' });
     scheduleReconnect(uniqueId, connection);
-  });
-
-  // FR-08: dedicated "host ended the LIVE" event -- distinct from a dropped
-  // WebSocket. Only flags the connection; the actual session-closing
-  // decision happens in the ControlEvent.DISCONNECTED handler above, which
-  // this always precedes (per the connector's docs).
-  connection.on(WebcastEvent.STREAM_END, (data) => {
-    const context = connectionContexts.get(uniqueId);
-    if (context) {
-      context.streamEndedByHost = true;
-    }
-    logger.info('FR-08: TikTok STREAM_END received (host ended or was suspended)', {
-      uniqueId,
-      action: data?.action,
-    });
   });
 
   connection.on(ControlEvent.ERROR, (err) => {
@@ -695,7 +683,7 @@ async function disconnectFromLiveStream(uniqueId, ended = false) {
     }
   }
   if (!ended) publishLiveStatus('DISCONNECTED', null);
-  await closeSession(uniqueId, 'disconnected');
+  await closeSession(uniqueId, ended ? 'ended' : 'disconnected');
   connection.disconnect();
   stopJoinBroadcastTimer(uniqueId);
   activeConnections.delete(uniqueId);
